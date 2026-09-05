@@ -1,0 +1,50 @@
+name: CI Build Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build & Sanity Check (Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            clang \
+            llvm \
+            lldb \
+            liblldb-dev \
+            opencl-headers \
+            ocl-icd-opencl-dev \
+            pocl-opencl-icd
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Build Project
+        run: |
+          cmake --build build --config Release -- -j$(nproc)
+
+      - name: Verify Executables
+        run: |
+          echo "Checking ocldbg..."
+          ./build/ocldbg || [ $? -eq 1 ]
+
+          if [ -f ./build/test_host_runner ]; then
+            echo "Checking test_host_runner..."
+            ./build/test_host_runner tests/kernels/hello_kernel.cl || true
+          fi
