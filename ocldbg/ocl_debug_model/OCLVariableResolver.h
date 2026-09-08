@@ -2,6 +2,7 @@
 #include "dwarf/DWARFSourceModel.h"
 #include "ocldbg/Backend.h"
 #include "ocldbg/OCLWorkItem.h"
+
 #include <memory>
 #include <vector>
 
@@ -26,8 +27,7 @@ public:
     ///
     /// @param wi      The selected work-item (must have a valid exec_ctx).
     /// @param backend The active execution backend (provides location_backend()).
-    std::vector<VarValue> resolve(const OCLWorkItem &wi,
-                                  Backend &backend) const;
+    std::vector<VarValue> resolve(const OCLWorkItem &wi, Backend &backend) const;
 
 private:
     DWARFSourceModel &dwarf_;

@@ -1,4 +1,5 @@
 #include "DAPServer.h"
+
 #include <stdexcept>
 
 // TODO (Person E): implement the full DAP message loop.
@@ -24,10 +25,8 @@ struct DAPServer::Impl {
     // TODO: JSON parser state, socket fd if TCP mode
 };
 
-DAPServer::DAPServer(Backend &backend, DWARFSourceModel &dwarf,
-                     OCLVariableResolver &resolver)
-    : backend_(backend), dwarf_(dwarf), resolver_(resolver),
-      impl_(std::make_unique<Impl>()) {}
+DAPServer::DAPServer(Backend &backend, DWARFSourceModel &dwarf, OCLVariableResolver &resolver)
+    : backend_(backend), dwarf_(dwarf), resolver_(resolver), impl_(std::make_unique<Impl>()) {}
 
 DAPServer::~DAPServer() = default;
 
@@ -46,13 +45,12 @@ void DAPServer::handle_message(const std::string & /*json_msg*/) {
 }
 
 std::string DAPServer::make_response(int /*seq*/, const std::string & /*cmd*/,
-                                      const std::string & /*body*/) {
+                                     const std::string & /*body*/) {
     // TODO (Person E): build DAP response JSON
     return "{}";
 }
 
-std::string DAPServer::make_event(const std::string & /*event*/,
-                                   const std::string & /*body*/) {
+std::string DAPServer::make_event(const std::string & /*event*/, const std::string & /*body*/) {
     // TODO (Person E): build DAP event JSON
     return "{}";
 }

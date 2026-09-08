@@ -1,6 +1,7 @@
 #pragma once
 #include "ocldbg/Backend.h"
 #include "ocldbg/LocationBackend.h"
+
 #include <memory>
 
 namespace ocldbg {

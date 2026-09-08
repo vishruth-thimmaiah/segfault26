@@ -111,3 +111,34 @@ if (OpenCL_FOUND)
         OpenCL::OpenCL
     )
 endif()
+
+# -----------------------------------------------------------------------------
+# Formatting and Clang-Tidy targets
+# -----------------------------------------------------------------------------
+find_program(CLANG_FORMAT_BIN NAMES clang-format)
+if (CLANG_FORMAT_BIN)
+    file(GLOB_RECURSE CXX_FORMAT_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/ocldbg/*.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/ocldbg/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/runtime_inject/*.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/runtime_inject/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c
+    )
+    add_custom_target(format
+        COMMAND ${CLANG_FORMAT_BIN} -i ${CXX_FORMAT_SOURCES}
+        COMMENT "Formatting all C/C++ source files with clang-format"
+    )
+    add_custom_target(check-format
+        COMMAND ${CLANG_FORMAT_BIN} --dry-run --Werror ${CXX_FORMAT_SOURCES}
+        COMMENT "Verifying code formatting with clang-format"
+    )
+endif()
+
+find_program(RUN_CLANG_TIDY_BIN NAMES run-clang-tidy run-clang-tidy.py)
+if (RUN_CLANG_TIDY_BIN)
+    add_custom_target(tidy
+        COMMAND ${RUN_CLANG_TIDY_BIN} -quiet -p ${CMAKE_BINARY_DIR}
+        COMMENT "Running clang-tidy across all translation units"
+    )
+endif()

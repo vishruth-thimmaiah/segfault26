@@ -1,6 +1,7 @@
 #pragma once
 #include "ocldbg/LocationBackend.h"
 #include "ocldbg/Types.h"
+
 #include <cstdint>
 #include <memory>
 #include <string>

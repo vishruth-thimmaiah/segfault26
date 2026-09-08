@@ -1,4 +1,5 @@
 #include "DWARFSourceModel.h"
+
 #include <stdexcept>
 
 // TODO (Person B): implement using LLVM's DWARF libraries.
@@ -40,14 +41,12 @@ SourceLocation DWARFSourceModel::pc_to_source(HostAddress /*pc*/) const {
     return {};
 }
 
-std::vector<HostAddress>
-DWARFSourceModel::source_to_pcs(const SourceLocation & /*loc*/) const {
+std::vector<HostAddress> DWARFSourceModel::source_to_pcs(const SourceLocation & /*loc*/) const {
     // TODO (Person B): scan line table for all PCs matching file:line
     return {};
 }
 
-std::vector<VarInfo>
-DWARFSourceModel::variables_in_scope(HostAddress /*pc*/) const {
+std::vector<VarInfo> DWARFSourceModel::variables_in_scope(HostAddress /*pc*/) const {
     // TODO (Person B): find the innermost lexical scope containing pc,
     // collect DW_TAG_variable and DW_TAG_formal_parameter DIEs,
     // extract DW_AT_location expressions and DW_AT_type references.
@@ -60,6 +59,8 @@ std::string DWARFSourceModel::type_name(uint64_t /*dwarf_type_offset*/) const {
     return "<unknown>";
 }
 
-bool DWARFSourceModel::loaded() const { return impl_->loaded; }
+bool DWARFSourceModel::loaded() const {
+    return impl_->loaded;
+}
 
 } // namespace ocldbg

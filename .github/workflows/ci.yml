@@ -1,4 +1,4 @@
-name: CI Build Check
+name: CI
 
 on:
   push:
@@ -7,6 +7,44 @@ on:
     branches: [ main ]
 
 jobs:
+  lint:
+    name: Formatting & Clang-Tidy (Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            clang \
+            clang-format \
+            clang-tidy \
+            llvm \
+            lldb \
+            liblldb-dev \
+            opencl-headers \
+            ocl-icd-opencl-dev \
+            pocl-opencl-icd
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Check code formatting
+        run: |
+          cmake --build build --target check-format
+
+      - name: Run Clang-Tidy
+        run: |
+          cmake --build build --target tidy
+
   build:
     name: Build & Sanity Check (Ubuntu)
     runs-on: ubuntu-latest

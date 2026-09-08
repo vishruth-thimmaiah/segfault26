@@ -35,7 +35,7 @@ uint64_t WorkGroupTracker::host_thread_for_wi(const Size3 & /*global_id*/) const
 }
 
 Size3 WorkGroupTracker::wg_for_thread(uint64_t /*host_thread_id*/) const {
-    std::lock_guard lk(mu_);
+    std::scoped_lock lk(mu_);
     // TODO (Person C)
     return {};
 }

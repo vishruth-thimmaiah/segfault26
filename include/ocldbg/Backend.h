@@ -2,6 +2,7 @@
 #include "ocldbg/LocationBackend.h"
 #include "ocldbg/OCLWorkItem.h"
 #include "ocldbg/Types.h"
+
 #include <functional>
 #include <memory>
 #include <vector>
@@ -31,8 +32,7 @@ public:
     /// @param host_binary  Path to the compiled OpenCL host executable.
     /// @param args         Arguments forwarded to the host program.
     /// @return true on success.
-    virtual bool launch(const std::string &host_binary,
-                        const std::vector<std::string> &args) = 0;
+    virtual bool launch(const std::string &host_binary, const std::vector<std::string> &args) = 0;
 
     /// Detach and clean up. Called on debugger exit or kernel completion.
     virtual void detach() = 0;
@@ -71,8 +71,7 @@ public:
 
     /// Make the given work-item the "selected" context for variable reads.
     /// Returns false if the WI's state is not accessible from this halt.
-    virtual bool select_work_item(const Size3 &global_id,
-                                  OCLWorkItem &out_wi) = 0;
+    virtual bool select_work_item(const Size3 &global_id, OCLWorkItem &out_wi) = 0;
 
     /// Return the LocationBackend for this execution target.
     /// Used by OCLVariableResolver to evaluate DWARF location expressions.
@@ -84,8 +83,7 @@ public:
 
     /// Read @p length bytes from the address @p addr in the __global address
     /// space into @p buf. Returns the number of bytes actually read.
-    virtual size_t read_global_memory(HostAddress addr,
-                                      void *buf, size_t length) = 0;
+    virtual size_t read_global_memory(HostAddress addr, void *buf, size_t length) = 0;
 };
 
 } // namespace ocldbg

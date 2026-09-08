@@ -1,6 +1,7 @@
 #pragma once
 #include "ocldbg/Backend.h"
 #include "ocldbg/OCLWorkItem.h"
+
 #include <memory>
 #include <string>
 
@@ -28,9 +29,7 @@ class OCLVariableResolver;
 ///   "ocldbg/selectWorkItem": { gx, gy, gz }  -> select a different WI
 class DAPServer {
 public:
-    DAPServer(Backend &backend,
-              DWARFSourceModel &dwarf,
-              OCLVariableResolver &resolver);
+    DAPServer(Backend &backend, DWARFSourceModel &dwarf, OCLVariableResolver &resolver);
     ~DAPServer();
 
     /// Run the DAP message loop on stdin/stdout.
@@ -52,17 +51,15 @@ private:
     // Custom: ocldbg/selectWorkItem
 
     void handle_message(const std::string &json_msg);
-    std::string make_response(int seq, const std::string &command,
-                              const std::string &body_json);
-    std::string make_event(const std::string &event,
-                           const std::string &body_json);
+    std::string make_response(int seq, const std::string &command, const std::string &body_json);
+    std::string make_event(const std::string &event, const std::string &body_json);
 
-    Backend             &backend_;
-    DWARFSourceModel    &dwarf_;
+    Backend &backend_;
+    DWARFSourceModel &dwarf_;
     OCLVariableResolver &resolver_;
 
     OCLStopContext current_stop_;
-    int            next_thread_id_ = 1;
+    int next_thread_id_ = 1;
 
     struct Impl;
     std::unique_ptr<Impl> impl_;

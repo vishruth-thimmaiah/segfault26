@@ -9,14 +9,11 @@ namespace ocldbg {
 struct Size3 {
     size_t x = 0, y = 0, z = 0;
 
-    bool operator==(const Size3 &o) const {
-        return x == o.x && y == o.y && z == o.z;
-    }
+    bool operator==(const Size3 &o) const { return x == o.x && y == o.y && z == o.z; }
     bool operator!=(const Size3 &o) const { return !(*this == o); }
 
     std::string str() const {
-        return "(" + std::to_string(x) + "," + std::to_string(y) + "," +
-               std::to_string(z) + ")";
+        return "(" + std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) + ")";
     }
 };
 

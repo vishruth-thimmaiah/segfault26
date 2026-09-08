@@ -1,6 +1,7 @@
 #pragma once
 #include "ocldbg/LocationBackend.h"
 #include "ocldbg/Types.h"
+
 #include <cstdint>
 #include <vector>
 
@@ -21,9 +22,7 @@ public:
     /// @param expr_len     Length of bytecode in bytes.
     /// @param exec_ctx     Target-specific register/frame execution context pointer.
     /// @return Evaluated target address, or 0 if evaluation fails / register-only.
-    uint64_t evaluate(const uint8_t *expr_bytes,
-                      size_t expr_len,
-                      void *exec_ctx) const;
+    uint64_t evaluate(const uint8_t *expr_bytes, size_t expr_len, void *exec_ctx) const;
 
 private:
     LocationBackend &loc_backend_;

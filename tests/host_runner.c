@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
 
     cl_context context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
     if (!context) {
-        fprintf(stderr, "[host_runner] Failed to create context\n", err);
+        fprintf(stderr, "[host_runner] Failed to create context (err=%d)\n", err);
         return 1;
     }
 
