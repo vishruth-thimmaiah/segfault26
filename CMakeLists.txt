@@ -113,6 +113,26 @@ if (OpenCL_FOUND)
 endif()
 
 # -----------------------------------------------------------------------------
+# LLVM LIT Test Suite
+# -----------------------------------------------------------------------------
+find_program(LLVM_LIT_BIN NAMES lit llvm-lit)
+find_program(FILECHECK_BIN NAMES FileCheck)
+
+if (LLVM_LIT_BIN AND FILECHECK_BIN AND OpenCL_FOUND)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/lit.site.cfg.py.in
+        ${CMAKE_CURRENT_BINARY_DIR}/tests/lit.site.cfg.py
+        @ONLY
+    )
+    add_custom_target(runtests
+        COMMAND ${LLVM_LIT_BIN} -v ${CMAKE_CURRENT_BINARY_DIR}/tests
+        DEPENDS test_host_runner
+        COMMENT "Running LIT test suite for segfault26"
+    )
+    add_custom_target(check-lit DEPENDS runtests)
+endif()
+
+# -----------------------------------------------------------------------------
 # Formatting and Clang-Tidy targets
 # -----------------------------------------------------------------------------
 find_program(CLANG_FORMAT_BIN NAMES clang-format)

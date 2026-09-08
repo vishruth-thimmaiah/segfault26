@@ -46,7 +46,7 @@ jobs:
           cmake --build build --target tidy
 
   build:
-    name: Build & Sanity Check (Ubuntu)
+    name: Build & Test (Ubuntu)
     runs-on: ubuntu-latest
 
     steps:
@@ -65,7 +65,8 @@ jobs:
             liblldb-dev \
             opencl-headers \
             ocl-icd-opencl-dev \
-            pocl-opencl-icd
+            pocl-opencl-icd \
+            lit
 
       - name: Configure CMake
         run: |
@@ -76,6 +77,10 @@ jobs:
       - name: Build Project
         run: |
           cmake --build build --config Release -- -j$(nproc)
+
+      - name: Run Tests
+        run: |
+          cmake --build build --target runtests
 
       - name: Verify Executables
         run: |
