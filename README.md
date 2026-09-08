@@ -11,8 +11,8 @@ A source-level debugger for OpenCL kernels running on CPU device backends (`pocl
 - CMake 3.20+
 - Modern C++20 compiler (`gcc` 11+ or `clang` 14+)
 - OpenCL 1.2+ ICD loader and development headers (`ocl-icd`, `opencl-headers`)
-- LLVM / LLDB development libraries (LLVM 15+ recommended; tested on LLVM 22)
-- pocl (Portable Computing Language)
+- LLVM / LLDB development libraries: **LLVM 22.0+ minimum** (tested and verified on **LLVM 23**)
+- PoCL (Portable Computing Language): **PoCL 7.0+ minimum** (**PoCL 7.1+ recommended** via `conda-forge` for modern LLVM compatibility)
 - Oclgrind (for emulator backend)
 
 ### Package Installation
@@ -28,13 +28,18 @@ sudo pacman -S base-devel cmake clang llvm lldb opencl-headers ocl-icd pocl
 ```bash
 sudo apt update
 sudo apt install -y build-essential cmake clang llvm lldb liblldb-dev \
-                    opencl-headers ocl-icd-opencl-dev pocl-opencl-icd lit
+                    opencl-headers ocl-icd-opencl-dev pocl-opencl-icd
 ```
 
 #### Fedora (39+)
 ```bash
 sudo dnf install -y gcc-c++ cmake clang llvm-devel lldb-devel \
-                    opencl-headers ocl-icd-devel pocl python3-lit
+                    opencl-headers ocl-icd-devel pocl
+```
+
+#### Conda / Mamba (PoCL 7.1+ & LIT)
+```bash
+mamba install -c conda-forge pocl lit
 ```
 
 ---
