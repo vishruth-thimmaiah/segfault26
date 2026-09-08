@@ -61,11 +61,22 @@ jobs:
             cmake \
             clang \
             llvm \
+            llvm-dev \
             lldb \
             liblldb-dev \
             opencl-headers \
             ocl-icd-opencl-dev \
             pocl-opencl-icd \
+            python3-pip
+          if ! command -v lit &>/dev/null; then
+            pip install --break-system-packages lit || pip install lit || true
+          fi
+          if ! command -v FileCheck &>/dev/null; then
+            FC=$(find /usr/lib/llvm-*/bin -name FileCheck 2>/dev/null | head -n 1)
+            if [ -n "$FC" ]; then
+              sudo ln -s "$FC" /usr/local/bin/FileCheck
+            fi
+          fi
 
       - name: Configure CMake
         run: |
