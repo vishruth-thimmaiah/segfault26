@@ -28,13 +28,13 @@ sudo pacman -S base-devel cmake clang llvm lldb opencl-headers ocl-icd pocl
 ```bash
 sudo apt update
 sudo apt install -y build-essential cmake clang llvm lldb liblldb-dev \
-                    opencl-headers ocl-icd-opencl-dev pocl-opencl-icd
+                    opencl-headers ocl-icd-opencl-dev pocl-opencl-icd lit
 ```
 
 #### Fedora (39+)
 ```bash
 sudo dnf install -y gcc-c++ cmake clang llvm-devel lldb-devel \
-                    opencl-headers ocl-icd-devel pocl
+                    opencl-headers ocl-icd-devel pocl python3-lit
 ```
 
 ---
@@ -82,6 +82,16 @@ Usage: ocldbg [--backend cpu|oclgrind] [--port <N>] <host_binary> [args...]
 Verify OpenCL platform and device discovery on your host:
 ```bash
 ./build/test_host_runner tests/kernels/hello_kernel.cl
+```
+
+### Running Tests (`runtests`)
+Run the LLVM LIT test suite (verifying kernel lowering, LLVM IR passes, and DWARF debug info):
+```bash
+cmake --build build --target runtests
+```
+Or run `lit` directly:
+```bash
+lit -v tests/
 ```
 
 ### Run Automated Demo Script

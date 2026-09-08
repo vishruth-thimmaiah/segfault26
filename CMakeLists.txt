@@ -113,6 +113,42 @@ if (OpenCL_FOUND)
 endif()
 
 # -----------------------------------------------------------------------------
+# LLVM LIT Test Suite
+# -----------------------------------------------------------------------------
+file(GLOB LLVM_PATH_HINTS "/usr/lib/llvm-*/bin")
+
+find_program(LLVM_LIT_BIN NAMES lit lit.py llvm-lit
+    HINTS ${LLVM_TOOLS_BINARY_DIR} ${LLVM_PATH_HINTS}
+)
+find_program(FILECHECK_BIN NAMES FileCheck FileCheck-20 FileCheck-19 FileCheck-18 FileCheck-17 FileCheck-16 FileCheck-15
+    HINTS ${LLVM_TOOLS_BINARY_DIR} ${LLVM_PATH_HINTS}
+)
+find_program(LLVM_DIS_BIN NAMES llvm-dis llvm-dis-20 llvm-dis-19 llvm-dis-18 llvm-dis-17 llvm-dis-16 llvm-dis-15
+    HINTS ${LLVM_TOOLS_BINARY_DIR} ${LLVM_PATH_HINTS}
+)
+
+if (LLVM_LIT_BIN AND FILECHECK_BIN AND OpenCL_FOUND)
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/lit.site.cfg.py.in
+        ${CMAKE_CURRENT_BINARY_DIR}/tests/lit.site.cfg.py
+        @ONLY
+    )
+    add_custom_target(runtests
+        COMMAND ${LLVM_LIT_BIN} -v ${CMAKE_CURRENT_BINARY_DIR}/tests
+        DEPENDS test_host_runner
+        COMMENT "Running LIT test suite for segfault26"
+    )
+    add_custom_target(check-lit DEPENDS runtests)
+else()
+    add_custom_target(runtests
+        COMMAND ${CMAKE_COMMAND} -E echo "Error: LIT test prerequisites missing (LIT='${LLVM_LIT_BIN}', FileCheck='${FILECHECK_BIN}', OpenCL='${OpenCL_FOUND}')"
+        COMMAND ${CMAKE_COMMAND} -E false
+        COMMENT "LIT test suite cannot run because required tools are missing"
+    )
+    add_custom_target(check-lit DEPENDS runtests)
+endif()
+
+# -----------------------------------------------------------------------------
 # Formatting and Clang-Tidy targets
 # -----------------------------------------------------------------------------
 find_program(CLANG_FORMAT_BIN NAMES clang-format)

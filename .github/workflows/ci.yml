@@ -21,21 +21,29 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
-            clang \
-            clang-format \
-            clang-tidy \
-            llvm \
-            lldb \
-            liblldb-dev \
+            wget \
+            gnupg \
+            software-properties-common \
             opencl-headers \
-            ocl-icd-opencl-dev \
-            pocl-opencl-icd
+            ocl-icd-opencl-dev
+
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22 all
+
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-22 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 100
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-22 100
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 100
 
       - name: Configure CMake
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_C_COMPILER=clang-22 \
+            -DCMAKE_CXX_COMPILER=clang++-22 \
+            -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm
 
       - name: Check code formatting
         run: |
@@ -46,7 +54,7 @@ jobs:
           cmake --build build --target tidy
 
   build:
-    name: Build & Sanity Check (Ubuntu)
+    name: Build & Test (Ubuntu)
     runs-on: ubuntu-latest
 
     steps:
@@ -59,23 +67,63 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
-            clang \
-            llvm \
-            lldb \
-            liblldb-dev \
+            wget \
+            gnupg \
+            software-properties-common \
             opencl-headers \
-            ocl-icd-opencl-dev \
-            pocl-opencl-icd
+            ocl-icd-opencl-dev
+
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22 all
+
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-22 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 100
+          sudo update-alternatives --install /usr/bin/llvm-dis llvm-dis /usr/bin/llvm-dis-22 100
+          if [ -f /usr/lib/llvm-22/bin/FileCheck ]; then
+            sudo ln -sf /usr/lib/llvm-22/bin/FileCheck /usr/local/bin/FileCheck
+          fi
+
+      - name: Setup Micromamba & Install PoCL
+        id: micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: pocl-env
+          create-args: >-
+            pocl
+            lit
+          init-shell: bash
+          cache-environment: true
+          cache-downloads: true
+
+      - name: Configure PoCL ICD & Runtime
+        run: |
+          POCL_ENV="${{ steps.micromamba.outputs.environment-path }}"
+          echo "PoCL environment path: $POCL_ENV"
+          echo "$POCL_ENV/lib" | sudo tee /etc/ld.so.conf.d/conda-pocl.conf
+          sudo ldconfig
+          sudo mkdir -p /etc/OpenCL/vendors
+          sudo cp -f "$POCL_ENV"/etc/OpenCL/vendors/*.icd /etc/OpenCL/vendors/
+          echo "OCL_ICD_VENDORS=$POCL_ENV/etc/OpenCL/vendors" >> $GITHUB_ENV
+          echo "PATH=$POCL_ENV/bin:$PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$POCL_ENV/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Configure CMake
         run: |
           cmake -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DCMAKE_C_COMPILER=clang-22 \
+            -DCMAKE_CXX_COMPILER=clang++-22 \
+            -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm
 
       - name: Build Project
         run: |
           cmake --build build --config Release -- -j$(nproc)
+
+      - name: Run Tests
+        run: |
+          cmake --build build --target runtests
 
       - name: Verify Executables
         run: |
