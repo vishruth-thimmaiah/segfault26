@@ -90,3 +90,20 @@ Verify OpenCL platform and device discovery on your host:
 ```
 
 ---
+
+## 4. Code Formatting & Linting
+
+### Formatting (`clang-format`)
+```bash
+# Format all C/C++ source files in place:
+cmake --build build --target format
+
+# Check formatting without modifying:
+cmake --build build --target check-format
+```
+
+### Static Analysis (`clang-tidy`)
+```bash
+# Run clang-tidy on all targets using compile_commands.json:
+cmake --build build --target tidy
+```

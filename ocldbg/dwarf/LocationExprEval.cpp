@@ -12,12 +12,10 @@
 
 namespace ocldbg {
 
-LocationExprEval::LocationExprEval(LocationBackend &loc_backend)
-    : loc_backend_(loc_backend) {}
+LocationExprEval::LocationExprEval(LocationBackend &loc_backend) : loc_backend_(loc_backend) {}
 
-uint64_t LocationExprEval::evaluate(const uint8_t * /*expr_bytes*/,
-                                   size_t /*expr_len*/,
-                                   void * /*exec_ctx*/) const {
+uint64_t LocationExprEval::evaluate(const uint8_t * /*expr_bytes*/, size_t /*expr_len*/,
+                                    void * /*exec_ctx*/) const {
     // TODO (Person B): Implement DWARF bytecode evaluation
     return 0;
 }

@@ -1,6 +1,7 @@
 #pragma once
 #include "ocldbg/OCLWorkItem.h"
 #include "ocldbg/Types.h"
+
 #include <cstdint>
 #include <mutex>
 #include <unordered_map>

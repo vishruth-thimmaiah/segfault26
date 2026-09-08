@@ -6,10 +6,8 @@
 
 namespace ocldbg {
 
-bool WIContextExtractor::extract(uint64_t /*host_thread_id*/,
-                                  const Size3 & /*wg_id*/,
-                                  const Size3 & /*local_size*/,
-                                  OCLWorkItem & /*out*/) {
+bool WIContextExtractor::extract(uint64_t /*host_thread_id*/, const Size3 & /*wg_id*/,
+                                 const Size3 & /*local_size*/, OCLWorkItem & /*out*/) {
     // TODO (Person C)
     return false;
 }

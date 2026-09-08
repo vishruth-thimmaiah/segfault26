@@ -1,6 +1,7 @@
 #pragma once
 #include "CPULocationBackend.h"
 #include "ocldbg/Backend.h"
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -32,12 +33,11 @@ public:
     PoclCPUBackend();
     ~PoclCPUBackend() override;
 
-    bool launch(const std::string &host_binary,
-                const std::vector<std::string> &args) override;
+    bool launch(const std::string &host_binary, const std::vector<std::string> &args) override;
     void detach() override;
 
     uint64_t set_breakpoint(const SourceLocation &loc) override;
-    void     remove_breakpoint(uint64_t bp_id) override;
+    void remove_breakpoint(uint64_t bp_id) override;
 
     void on_stop(StopCallback cb) override;
     void resume() override;
@@ -47,14 +47,13 @@ public:
     bool select_work_item(const Size3 &global_id, OCLWorkItem &out) override;
     LocationBackend &location_backend() override;
 
-    size_t read_global_memory(HostAddress addr, void *buf,
-                              size_t length) override;
+    size_t read_global_memory(HostAddress addr, void *buf, size_t length) override;
 
 private:
-    std::unique_ptr<WorkGroupTracker>    wg_tracker_;
+    std::unique_ptr<WorkGroupTracker> wg_tracker_;
     std::unique_ptr<WIContextExtractor> wi_extractor_;
-    CPULocationBackend                   loc_backend_;
-    StopCallback                         stop_cb_;
+    CPULocationBackend loc_backend_;
+    StopCallback stop_cb_;
 
     struct Impl;
     std::unique_ptr<Impl> impl_; // holds LLDB SBDebugger, SBTarget, SBProcess

@@ -13,12 +13,10 @@
 
 namespace ocldbg {
 
-OCLVariableResolver::OCLVariableResolver(DWARFSourceModel &dwarf_model)
-    : dwarf_(dwarf_model) {}
+OCLVariableResolver::OCLVariableResolver(DWARFSourceModel &dwarf_model) : dwarf_(dwarf_model) {}
 
-std::vector<VarValue>
-OCLVariableResolver::resolve(const OCLWorkItem & /*wi*/,
-                             Backend & /*backend*/) const {
+std::vector<VarValue> OCLVariableResolver::resolve(const OCLWorkItem & /*wi*/,
+                                                   Backend & /*backend*/) const {
     return {};
 }
 

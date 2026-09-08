@@ -16,6 +16,7 @@
 #include "dap/DAPServer.h"
 #include "dwarf/DWARFSourceModel.h"
 #include "ocl_debug_model/OCLVariableResolver.h"
+
 #include <iostream>
 #include <memory>
 #include <string>
@@ -48,7 +49,7 @@ int main(int argc, char **argv) {
     }
 
     // Shared DWARF model and resolver
-    ocldbg::DWARFSourceModel  dwarf;
+    ocldbg::DWARFSourceModel dwarf;
     ocldbg::OCLVariableResolver resolver(dwarf);
 
     // DAP server

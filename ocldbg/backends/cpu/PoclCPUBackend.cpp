@@ -1,6 +1,8 @@
 #include "PoclCPUBackend.h"
+
 #include "WIContextExtractor.h"
 #include "WorkGroupTracker.h"
+
 #include <stdexcept>
 
 // TODO (Person C): implement all methods below.
@@ -27,13 +29,12 @@ struct PoclCPUBackend::Impl {
 
 PoclCPUBackend::PoclCPUBackend()
     : wg_tracker_(std::make_unique<WorkGroupTracker>()),
-      wi_extractor_(std::make_unique<WIContextExtractor>()),
-      impl_(std::make_unique<Impl>()) {}
+      wi_extractor_(std::make_unique<WIContextExtractor>()), impl_(std::make_unique<Impl>()) {}
 
 PoclCPUBackend::~PoclCPUBackend() = default;
 
 bool PoclCPUBackend::launch(const std::string & /*host_binary*/,
-                             const std::vector<std::string> & /*args*/) {
+                            const std::vector<std::string> & /*args*/) {
     // TODO (Person C):
     //   1. Set env: POCL_EXTRA_BUILD_FLAGS="-g -cl-opt-disable",
     //               POCL_LEAVE_KERNEL_COMPILER_TEMP_FILES=1,
@@ -60,7 +61,9 @@ void PoclCPUBackend::remove_breakpoint(uint64_t /*bp_id*/) {
     // TODO (Person C): impl_->target.BreakpointDelete(bp_id)
 }
 
-void PoclCPUBackend::on_stop(StopCallback cb) { stop_cb_ = std::move(cb); }
+void PoclCPUBackend::on_stop(StopCallback cb) {
+    stop_cb_ = std::move(cb);
+}
 
 void PoclCPUBackend::resume() {
     // TODO (Person C): impl_->process.Continue()
@@ -75,24 +78,23 @@ void PoclCPUBackend::step_in(const OCLWorkItem & /*wi*/) {
     // TODO (Person C): SBThread::StepInto()
 }
 
-bool PoclCPUBackend::select_work_item(const Size3 & /*global_id*/,
-                                       OCLWorkItem & /*out*/) {
+bool PoclCPUBackend::select_work_item(const Size3 & /*global_id*/, OCLWorkItem & /*out*/) {
     // TODO (Person C):
     //   1. wg_tracker_->find_wg_for_wi(global_id) -> host_thread_id
     //   2. wi_extractor_->extract(host_thread_id, global_id) -> OCLWorkItem
     return false;
 }
 
-LocationBackend &PoclCPUBackend::location_backend() { return loc_backend_; }
+LocationBackend &PoclCPUBackend::location_backend() {
+    return loc_backend_;
+}
 
-size_t PoclCPUBackend::read_global_memory(HostAddress /*addr*/, void * /*buf*/,
-                                           size_t /*length*/) {
+size_t PoclCPUBackend::read_global_memory(HostAddress /*addr*/, void * /*buf*/, size_t /*length*/) {
     // TODO (Person C): impl_->process.ReadMemory(addr, buf, length, error)
     return 0;
 }
 
-VarValue CPULocationBackend::evaluate(const VarInfo & /*var*/,
-                                      ExecCtxHandle /*exec_ctx*/) {
+VarValue CPULocationBackend::evaluate(const VarInfo & /*var*/, ExecCtxHandle /*exec_ctx*/) {
     // TODO (Person C): use LLDB SBFrame / SBValue to evaluate DWARF location expression
     return {};
 }

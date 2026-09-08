@@ -1,5 +1,6 @@
 #pragma once
 #include "ocldbg/Types.h"
+
 #include <string>
 #include <vector>
 
@@ -23,9 +24,7 @@ struct OCLWorkItem {
 
     bool valid() const { return exec_ctx != nullptr; }
 
-    std::string str() const {
-        return "WI" + global_id.str() + " grp" + group_id.str();
-    }
+    std::string str() const { return "WI" + global_id.str() + " grp" + group_id.str(); }
 };
 
 /// What the debugger actually has state for at a given halt point.
@@ -34,7 +33,7 @@ struct OCLWorkItem {
 /// NDRange produces over a million entries. Instead surface only the
 /// work-items whose state is concretely accessible right now.
 struct OCLStopContext {
-    OCLWorkItem stopped;        ///< the WI at which execution halted
+    OCLWorkItem stopped;              ///< the WI at which execution halted
     std::vector<OCLWorkItem> visible; ///< other WIs accessible from this halt
                                       ///  (e.g. peers in the same work-group
                                       ///   / wave that the backend can read)

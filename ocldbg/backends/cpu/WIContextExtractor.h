@@ -1,5 +1,6 @@
 #pragma once
 #include "ocldbg/OCLWorkItem.h"
+
 #include <cstdint>
 
 namespace ocldbg {
@@ -25,9 +26,7 @@ public:
     /// @param local_size      NDRange local work-group size
     /// @param out             Filled on success
     /// @return false if the loop induction variable cannot be read
-    bool extract(uint64_t host_thread_id,
-                 const Size3 &wg_id,
-                 const Size3 &local_size,
+    bool extract(uint64_t host_thread_id, const Size3 &wg_id, const Size3 &local_size,
                  OCLWorkItem &out);
 
     // TODO (Person C): the actual variable name for the loop induction var

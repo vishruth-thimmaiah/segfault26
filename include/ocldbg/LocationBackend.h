@@ -1,5 +1,6 @@
 #pragma once
 #include "ocldbg/Types.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -10,17 +11,17 @@ namespace ocldbg {
 struct VarValue {
     std::string name;
     std::string type_name;
-    std::string value_str;    ///< human-readable representation
+    std::string value_str;     ///< human-readable representation
     std::string address_space; ///< "__global", "__local", "__private", ""
-    bool        available = false; ///< false if location could not be resolved
+    bool available = false;    ///< false if location could not be resolved
 };
 
 /// Describes a variable known at a source location (before value lookup).
 struct VarInfo {
-    std::string  name;
-    std::string  type_name;
-    std::string  address_space;
-    HostAddress  location_pc;  ///< PC at which this variable is in scope
+    std::string name;
+    std::string type_name;
+    std::string address_space;
+    HostAddress location_pc; ///< PC at which this variable is in scope
     // DWARF location expression bytes (to be evaluated by LocationBackend)
     std::vector<uint8_t> dwarf_location_expr;
 };
@@ -40,8 +41,7 @@ public:
     /// Evaluate a DWARF location expression in the context of a specific
     /// work-item's execution context. Returns the resolved value string,
     /// or an empty VarValue with available=false on failure.
-    virtual VarValue evaluate(const VarInfo &var,
-                              ExecCtxHandle exec_ctx) = 0;
+    virtual VarValue evaluate(const VarInfo &var, ExecCtxHandle exec_ctx) = 0;
 };
 
 } // namespace ocldbg
