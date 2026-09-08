@@ -25,8 +25,7 @@ jobs:
             gnupg \
             software-properties-common \
             opencl-headers \
-            ocl-icd-opencl-dev \
-            pocl-opencl-icd
+            ocl-icd-opencl-dev
 
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
@@ -72,9 +71,7 @@ jobs:
             gnupg \
             software-properties-common \
             opencl-headers \
-            ocl-icd-opencl-dev \
-            pocl-opencl-icd \
-            python3-pip
+            ocl-icd-opencl-dev
 
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
@@ -87,7 +84,29 @@ jobs:
             sudo ln -sf /usr/lib/llvm-22/bin/FileCheck /usr/local/bin/FileCheck
           fi
 
-          sudo pip install --break-system-packages lit
+      - name: Setup Micromamba & Install PoCL
+        id: micromamba
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: pocl-env
+          create-args: >-
+            pocl
+            lit
+          init-shell: bash
+          cache-environment: true
+          cache-downloads: true
+
+      - name: Configure PoCL ICD & Runtime
+        run: |
+          POCL_ENV="${{ steps.micromamba.outputs.environment-path }}"
+          echo "PoCL environment path: $POCL_ENV"
+          echo "$POCL_ENV/lib" | sudo tee /etc/ld.so.conf.d/conda-pocl.conf
+          sudo ldconfig
+          sudo mkdir -p /etc/OpenCL/vendors
+          sudo cp -f "$POCL_ENV"/etc/OpenCL/vendors/*.icd /etc/OpenCL/vendors/
+          echo "OCL_ICD_VENDORS=$POCL_ENV/etc/OpenCL/vendors" >> $GITHUB_ENV
+          echo "PATH=$POCL_ENV/bin:$PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$POCL_ENV/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Configure CMake
         run: |
