@@ -26,6 +26,18 @@ else()
     set(LLVM_LIBS "")
 endif()
 
+# LLDB C++ API library
+file(GLOB LLVM_LIB_HINTS "/usr/lib/llvm-*/lib")
+find_library(LLDB_LIB NAMES lldb liblldb lldb-22 lldb-21 lldb-20 lldb-19 lldb-18
+    HINTS ${LLVM_LIBRARY_DIRS} ${LLVM_LIB_HINTS}
+)
+if (LLDB_LIB)
+    message(STATUS "Found LLDB library: ${LLDB_LIB}")
+else()
+    message(WARNING "LLDB library not found; linking without it.")
+    set(LLDB_LIB "")
+endif()
+
 # OpenCL configuration (for test kernels and validation runner)
 find_package(OpenCL QUIET)
 if (OpenCL_FOUND)
@@ -83,6 +95,7 @@ target_include_directories(ocldbg_core PUBLIC
 target_link_libraries(ocldbg_core PUBLIC
     Threads::Threads
     ${LLVM_LIBS}
+    ${LLDB_LIB}
     ${CMAKE_DL_LIBS}
 )
 
@@ -97,6 +110,7 @@ target_link_libraries(ocldbg PRIVATE
     ocldbg_core
     Threads::Threads
     ${LLVM_LIBS}
+    ${LLDB_LIB}
 )
 
 # -----------------------------------------------------------------------------

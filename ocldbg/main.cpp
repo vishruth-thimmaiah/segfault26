@@ -18,11 +18,15 @@
 #include "ocl_debug_model/OCLVariableResolver.h"
 
 #include <iostream>
+#include <lldb/API/SBDebugger.h>
 #include <memory>
 #include <string>
 #include <vector>
 
 int main(int argc, char **argv) {
+    lldb::SBDebugger::Initialize();
+    std::cout << "Using " << lldb::SBDebugger::GetVersionString() << "\n";
+
     // TODO (Person E): parse arguments (backend selection, port, binary path)
     // For now, print usage and exit.
 
@@ -60,6 +64,8 @@ int main(int argc, char **argv) {
     } else {
         dap.run_stdio();
     }
+
+    lldb::SBDebugger::Terminate();
 
     return 0;
 }
