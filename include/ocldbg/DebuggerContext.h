@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ocldbg/OCLWorkItem.h"
 #include "ocldbg/Types.h"
 
 #include <cstdint>
@@ -33,6 +34,22 @@ public:
 
     /// If halted at clEnqueueNDRangeKernel, inspect arguments and compute launch bounds.
     bool infer_kernel_launch();
+
+    /// Set a breakpoint on `_pocl_kernel_<name>_workgroup` for live dispatch tracking.
+    /// Must be called after infer_kernel_launch() and before track_workgroup_dispatches().
+    /// Returns true if the breakpoint resolved to at least one location (i.e. the
+    /// kernel .so is already loaded), false otherwise (will resolve lazily on first run).
+    bool set_workgroup_breakpoint(const std::string &kernel_name);
+
+    /// Resume the process and consume all _pocl_kernel_*_workgroup stop events,
+    /// recording each stopped thread's work-group coordinates in WorkGroupTracker.
+    /// Returns the number of work-group dispatch events recorded.
+    /// Stops when the process exits, crashes, or hits a non-WG breakpoint.
+    [[nodiscard]] size_t track_workgroup_dispatches();
+
+    /// Given a stopped host thread ID, resolve the active OCLWorkItem by combining
+    /// the WorkGroupTracker (WG coordinates) with WIContextExtractor (local ID).
+    [[nodiscard]] std::optional<OCLWorkItem> resolve_stopped_work_item(uint64_t thread_id) const;
 
     /// Access the inferred launch parameters and bounds, if available.
     [[nodiscard]] const std::optional<KernelLaunchInfo> &kernel_launch_info() const;

@@ -2,23 +2,33 @@
 
 #include "backends/cpu/CPUABI.h"
 #include "backends/cpu/PoclCPUBackend.h"
+#include "backends/cpu/WIContextExtractor.h"
+#include "backends/cpu/WorkGroupTracker.h"
 #include "backends/oclgrind/OclgrindBackend.h"
 #include "dap/DAPServer.h"
 #include "dwarf/DWARFSourceModel.h"
 #include "ocl_debug_model/OCLVariableResolver.h"
 
 #include <algorithm>
+#include <array>
+#include <format>
+#include <fstream>
 #include <iostream>
 #include <lldb/API/SBBreakpoint.h>
+#include <lldb/API/SBBreakpointLocation.h>
 #include <lldb/API/SBDebugger.h>
 #include <lldb/API/SBError.h>
+#include <lldb/API/SBFileSpec.h>
 #include <lldb/API/SBFrame.h>
 #include <lldb/API/SBLaunchInfo.h>
+#include <lldb/API/SBModule.h>
 #include <lldb/API/SBProcess.h>
+#include <lldb/API/SBSymbol.h>
 #include <lldb/API/SBTarget.h>
 #include <lldb/API/SBThread.h>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace ocldbg {
@@ -90,13 +100,91 @@ std::vector<WorkItemMapping> compute_sample_work_items(const Size3 &global_size,
     return mappings;
 }
 
+std::optional<lldb::addr_t> find_pocl_dispatch_address(lldb::SBTarget &target) {
+    lldb::SBModule pthread_mod;
+    uint32_t num_mods = target.GetNumModules();
+    for (uint32_t i = 0; i < num_mods; ++i) {
+        lldb::SBModule m = target.GetModuleAtIndex(i);
+        const char *fn = m.GetFileSpec().GetFilename();
+        if (fn != nullptr &&
+            std::string_view(fn).find("libpocl-devices-pthread.so") != std::string_view::npos) {
+            pthread_mod = m;
+            break;
+        }
+    }
+
+    if (!pthread_mod.IsValid()) {
+        return std::nullopt;
+    }
+
+    // In PoCL pthread backend, work-group dispatch is performed via:
+    // call *0xb8(%r14)  [Opcode: 41 ff 96 b8 00 00 00]
+    // where %rdx, %rcx, %r8 hold group coordinates (X, Y, Z).
+    constexpr std::array<uint8_t, 7> kOpcodePattern{0x41, 0xff, 0x96, 0xb8, 0x00, 0x00, 0x00};
+
+    std::array<char, 1024> full_path{};
+    uint32_t path_len = pthread_mod.GetFileSpec().GetPath(full_path.data(), full_path.size());
+    if (path_len == 0) {
+        return std::nullopt;
+    }
+
+    std::ifstream file(full_path.data(), std::ios::binary);
+    if (!file) {
+        return std::nullopt;
+    }
+
+    std::vector<uint8_t> buffer((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+    auto subrange = std::ranges::search(buffer, kOpcodePattern);
+    if (subrange.empty()) {
+        return std::nullopt;
+    }
+
+    auto offset = static_cast<size_t>(std::distance(buffer.begin(), subrange.begin()));
+    lldb::addr_t load_base = pthread_mod.GetObjectFileHeaderAddress().GetLoadAddress(target);
+    if (load_base == LLDB_INVALID_ADDRESS) {
+        return std::nullopt;
+    }
+
+    return load_base + offset;
+}
+
+bool record_stopped_workgroups(lldb::SBProcess &process, CPUABI *abi, WorkGroupTracker &tracker,
+                               size_t &dispatch_count) {
+    bool any_wg_hit = false;
+    uint32_t num_threads = process.GetNumThreads();
+    for (uint32_t i = 0; i < num_threads; ++i) {
+        lldb::SBThread t = process.GetThreadAtIndex(i);
+        if (!t.IsValid() || t.GetStopReason() != lldb::eStopReasonBreakpoint) {
+            continue;
+        }
+
+        lldb::SBFrame f = t.GetSelectedFrame();
+        if (!f.IsValid()) {
+            f = t.GetFrameAtIndex(0);
+        }
+
+        Size3 wg_id;
+        if (abi->read_workgroup_id(f, wg_id)) {
+            tracker.record_wg(t.GetThreadID(), wg_id);
+            ++dispatch_count;
+            any_wg_hit = true;
+        }
+    }
+    return any_wg_hit;
+}
+
 } // namespace
 
 struct DebuggerContext::Impl {
     lldb::SBDebugger debugger;
     lldb::SBTarget target;
     lldb::SBProcess process;
+    lldb::SBBreakpoint wg_breakpoint;
     std::optional<KernelLaunchInfo> launch_info;
+    std::string kernel_name;
+    WorkGroupTracker wg_tracker;
+    std::unique_ptr<CPUABI> abi{CPUABI::create_host_abi()};
 };
 
 std::string DebuggerContext::init() {
@@ -136,7 +224,8 @@ bool DebuggerContext::launch(const std::string &host_binary, const std::vector<s
     }
     c_args.push_back(nullptr);
 
-    lldb::SBLaunchInfo launch_info(c_args.data());
+    lldb::SBLaunchInfo launch_info = impl_->target.GetLaunchInfo();
+    launch_info.SetArguments(c_args.data(), true);
     lldb::SBError error;
     impl_->process = impl_->target.Launch(launch_info, error);
 
@@ -159,11 +248,11 @@ bool DebuggerContext::infer_kernel_launch() {
         frame = thread.GetFrameAtIndex(0);
     }
 
-    std::unique_ptr<CPUABI> abi = CPUABI::create_host_abi();
     Size3 global_size{.x = 1, .y = 1, .z = 1};
     Size3 local_size{.x = 1, .y = 1, .z = 1};
 
-    if (!abi || !abi->read_enqueue_ndrange(impl_->process, frame, global_size, local_size)) {
+    if (!impl_->abi ||
+        !impl_->abi->read_enqueue_ndrange(impl_->process, frame, global_size, local_size)) {
         return false;
     }
 
@@ -184,7 +273,95 @@ bool DebuggerContext::infer_kernel_launch() {
     };
 
     impl_->launch_info = info;
+    impl_->wg_tracker.set_ndrange(global_size, local_size);
     return true;
+}
+
+bool DebuggerContext::set_workgroup_breakpoint(const std::string &kernel_name) {
+    if (kernel_name.empty() || !impl_->target.IsValid()) {
+        return false;
+    }
+    impl_->kernel_name = kernel_name;
+
+    // Clean up any previously set workgroup breakpoint.
+    if (impl_->wg_breakpoint.IsValid()) {
+        impl_->target.BreakpointDelete(impl_->wg_breakpoint.GetID());
+    }
+
+    // First try locating the PoCL work-group dispatch call in libpocl-devices-pthread.so.
+    if (auto addr = find_pocl_dispatch_address(impl_->target)) {
+        impl_->wg_breakpoint = impl_->target.BreakpointCreateByAddress(*addr);
+        return impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0;
+    }
+
+    // Fall back to direct symbol name if libpocl-devices-pthread is not in use.
+    std::string sym = std::format("_pocl_kernel_{}_workgroup", kernel_name);
+    impl_->wg_breakpoint = impl_->target.BreakpointCreateByName(sym.c_str());
+    return impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0;
+}
+
+size_t DebuggerContext::track_workgroup_dispatches() {
+    if (!impl_->process.IsValid() || !impl_->abi) {
+        return 0;
+    }
+
+    // Ensure work-group breakpoint is set.
+    if (!impl_->wg_breakpoint.IsValid() || impl_->wg_breakpoint.GetNumLocations() == 0) {
+        if (!set_workgroup_breakpoint(impl_->kernel_name)) {
+            return 0;
+        }
+    }
+
+    impl_->wg_tracker.clear();
+
+    size_t dispatch_count = 0;
+    while (true) {
+        impl_->process.Continue();
+
+        lldb::StateType state = impl_->process.GetState();
+        if (state == lldb::eStateExited || state == lldb::eStateCrashed) {
+            break;
+        }
+        if (state != lldb::eStateStopped) {
+            continue;
+        }
+
+        if (!record_stopped_workgroups(impl_->process, impl_->abi.get(), impl_->wg_tracker,
+                                       dispatch_count)) {
+            break;
+        }
+    }
+
+    if (impl_->wg_breakpoint.IsValid()) {
+        impl_->target.BreakpointDelete(impl_->wg_breakpoint.GetID());
+    }
+
+    return dispatch_count;
+}
+
+std::optional<OCLWorkItem> DebuggerContext::resolve_stopped_work_item(uint64_t thread_id) const {
+    if (!impl_->launch_info || !impl_->abi) {
+        return std::nullopt;
+    }
+
+    const Size3 &local_size = impl_->launch_info->local_size;
+    Size3 wg_id = impl_->wg_tracker.wg_for_thread(thread_id);
+
+    // Find the thread in the process.
+    uint32_t num_threads = impl_->process.GetNumThreads();
+    for (uint32_t i = 0; i < num_threads; ++i) {
+        lldb::SBThread t = impl_->process.GetThreadAtIndex(i);
+        if (!t.IsValid() || t.GetThreadID() != thread_id) {
+            continue;
+        }
+        WIContextExtractor extractor;
+        OCLWorkItem item;
+        if (extractor.extract_from_thread(t, wg_id, local_size, item)) {
+            return item;
+        }
+        break;
+    }
+    return std::nullopt;
 }
 
 const std::optional<KernelLaunchInfo> &DebuggerContext::kernel_launch_info() const {
