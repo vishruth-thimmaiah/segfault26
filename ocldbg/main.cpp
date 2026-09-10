@@ -5,67 +5,133 @@
  * Owner: Person E
  *
  * Usage:
- *   ocldbg [--backend cpu|oclgrind] [--port <N>] <host_binary> [args...]
+ *   ocldbg [options] <host_binary> [args...]
  *
- * Without --port: runs DAP server on stdin/stdout (VS Code default).
- * With    --port: listens on TCP for a DAP client.
+ * Options:
+ *   --dry-run          [TEMP] Test launch and NDRange inference without full execution
+ *   --show-wg-bounds   Display inferred work-group bounds and coordinate mapping
+ *   --backend <name>   Execution backend (default: cpu)
+ *   --port <port>      Listen on TCP port for DAP client (default: stdio)
  */
 
-#include "backends/cpu/PoclCPUBackend.h"
-#include "backends/oclgrind/OclgrindBackend.h"
-#include "dap/DAPServer.h"
-#include "dwarf/DWARFSourceModel.h"
-#include "ocl_debug_model/OCLVariableResolver.h"
+#include "ocldbg/DebuggerContext.h"
+#include "ocldbg/Types.h"
 
+#include <format>
 #include <iostream>
-#include <lldb/API/SBDebugger.h>
-#include <memory>
 #include <string>
 #include <vector>
 
-int main(int argc, char **argv) {
-    lldb::SBDebugger::Initialize();
-    std::cout << "Using " << lldb::SBDebugger::GetVersionString() << "\n";
+namespace {
 
-    // TODO (Person E): parse arguments (backend selection, port, binary path)
-    // For now, print usage and exit.
-
+struct ProgramArgs {
     std::string backend_name = "cpu";
     std::string host_binary;
     std::vector<std::string> host_args;
-    uint16_t dap_port = 0; // 0 = stdin/stdout mode
+    uint16_t dap_port = 0;
+    bool dry_run = false;
+    bool show_wg_bounds = false;
+    bool show_help = false;
+};
 
-    if (argc < 2) {
-        std::cerr << "Usage: ocldbg [--backend cpu|oclgrind] [--port <N>]"
-                     " <host_binary> [args...]\n";
+ProgramArgs parse_arguments(int argc, char **argv) {
+    ProgramArgs args;
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--dry-run") {
+            args.dry_run = true;
+        } else if (arg == "--show-wg-bounds") {
+            args.show_wg_bounds = true;
+        } else if (arg == "--backend" && (i + 1 < argc)) {
+            args.backend_name = argv[++i];
+        } else if (arg == "--port" && (i + 1 < argc)) {
+            args.dap_port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (arg == "-h" || arg == "--help") {
+            args.show_help = true;
+        } else if (!arg.empty() && arg[0] != '-') {
+            if (args.host_binary.empty()) {
+                args.host_binary = arg;
+            } else {
+                args.host_args.push_back(arg);
+            }
+        }
+    }
+    return args;
+}
+
+void print_help() {
+    std::cout << std::format(
+        "Usage: ocldbg [options] <host_binary> [args...]\n"
+        "Options:\n"
+        "  --dry-run          [TEMP] Test launch and NDRange inference without full execution\n"
+        "  --show-wg-bounds   Display inferred work-group bounds and coordinate mapping\n"
+        "  --backend <name>   Execution backend (default: cpu)\n"
+        "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n");
+}
+
+void print_inferred_bounds(const ocldbg::KernelLaunchInfo &info) {
+    std::cout << std::format("[ocldbg] Inferred NDRange from call site:\n"
+                             "  Global Size: {}\n"
+                             "  Local Size:  {}\n"
+                             "  Work-Groups: {}\n"
+                             "[ocldbg] Work-Group Bounds:\n",
+                             info.global_size, info.local_size, info.num_groups);
+
+    for (const auto &wg : info.work_groups) {
+        std::cout << std::format("  WG {}: global range [{} - {}] ({} work-items)\n", wg.group_id,
+                                 wg.min_wi, wg.max_wi, wg.item_count);
+    }
+
+    std::cout << "[ocldbg] Work-Item Context Mapping:\n";
+    for (const auto &wi : info.sample_work_items) {
+        std::cout << std::format("  WI {} -> WG {} Local {}\n", wi.global_id, wi.group_id,
+                                 wi.local_id);
+    }
+}
+
+} // namespace
+
+int main(int argc, char **argv) {
+    std::string lldb_version = ocldbg::DebuggerContext::init();
+    std::cout << std::format("Using {}\n", lldb_version);
+
+    ProgramArgs args = parse_arguments(argc, argv);
+
+    if (args.show_help) {
+        print_help();
+        ocldbg::DebuggerContext::terminate();
+        return 0;
+    }
+
+    if (args.host_binary.empty()) {
+        std::cerr << "Usage: ocldbg [options] <host_binary> [args...]\n";
+        ocldbg::DebuggerContext::terminate();
         return 1;
     }
 
-    // TODO (Person E): proper arg parsing (consider using CLI11 or hand-rolled)
-    host_binary = argv[1];
-
-    // Select backend
-    std::unique_ptr<ocldbg::Backend> backend;
-    if (backend_name == "oclgrind") {
-        backend = std::make_unique<ocldbg::OclgrindBackend>();
-    } else {
-        backend = std::make_unique<ocldbg::PoclCPUBackend>();
+    ocldbg::DebuggerContext dbg;
+    if (!dbg.launch(args.host_binary, args.host_args)) {
+        ocldbg::DebuggerContext::terminate();
+        return 1;
     }
 
-    // Shared DWARF model and resolver
-    ocldbg::DWARFSourceModel dwarf;
-    ocldbg::OCLVariableResolver resolver(dwarf);
-
-    // DAP server
-    ocldbg::DAPServer dap(*backend, dwarf, resolver);
-
-    if (dap_port > 0) {
-        dap.run_tcp(dap_port);
+    if (dbg.infer_kernel_launch()) {
+        if (args.show_wg_bounds && dbg.kernel_launch_info()) {
+            print_inferred_bounds(*dbg.kernel_launch_info());
+        }
     } else {
-        dap.run_stdio();
+        std::cerr << "[ocldbg] Warning: Could not infer NDRange from kernel call site\n";
     }
 
-    lldb::SBDebugger::Terminate();
+    // NOTE: --dry-run is a temporary test/validation flag used during milestone verification.
+    if (args.dry_run) {
+        std::cout << "[ocldbg] Dry run completed successfully.\n";
+        dbg.terminate_process();
+        ocldbg::DebuggerContext::terminate();
+        return 0;
+    }
 
-    return 0;
+    int ret = dbg.run_dap(args.backend_name, args.dap_port);
+    ocldbg::DebuggerContext::terminate();
+    return ret;
 }

@@ -23,6 +23,14 @@ if not host_runner or not os.path.exists(host_runner):
     else:
         host_runner = "test_host_runner"
 
+ocldbg = getattr(config, "ocldbg_bin", None)
+if not ocldbg or not os.path.exists(ocldbg):
+    candidate = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "build", "ocldbg"))
+    if os.path.exists(candidate):
+        ocldbg = candidate
+    else:
+        ocldbg = "ocldbg"
+
 filecheck = getattr(config, "filecheck_bin", None)
 if not filecheck or not os.path.exists(filecheck):
     filecheck = shutil.which("FileCheck") or "FileCheck"
@@ -30,5 +38,6 @@ if not filecheck or not os.path.exists(filecheck):
 llvm_dis = shutil.which("llvm-dis") or "llvm-dis"
 
 config.substitutions.append(("%test_host_runner", host_runner))
+config.substitutions.append(("%ocldbg", ocldbg))
 config.substitutions.append(("%FileCheck", filecheck))
 config.substitutions.append(("%llvm-dis", llvm_dis))

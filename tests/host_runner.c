@@ -214,6 +214,57 @@ static int run_reduce_sum(cl_context context, cl_command_queue queue, cl_kernel 
     return (err == CL_SUCCESS) ? 0 : 1;
 }
 
+static int run_volume_acc(cl_context context, cl_command_queue queue, cl_kernel kernel) {
+    const size_t gx = 8;
+    const size_t gy = 8;
+    const size_t gz = 4;
+    const size_t total_elements = gx * gy * gz;
+    float *h_src = (float *)malloc(sizeof(float) * total_elements);
+    float *h_dst = (float *)malloc(sizeof(float) * total_elements);
+    if (!h_src || !h_dst) {
+        free(h_src);
+        free(h_dst);
+        return 1;
+    }
+
+    for (size_t i = 0; i < total_elements; ++i) {
+        h_src[i] = 1.0F;
+        h_dst[i] = 0.0F;
+    }
+
+    cl_int err = CL_SUCCESS;
+    cl_mem d_src = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                  sizeof(float) * total_elements, (void *)h_src, &err);
+    cl_mem d_dst =
+        clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(float) * total_elements, NULL, &err);
+
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), (const void *)&d_src);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), (const void *)&d_dst);
+
+    size_t global_size[3] = {gx, gy, gz};
+    size_t local_size[3] = {2, 2, 2};
+    printf("[host_runner] Enqueueing kernel volume_acc (global=[%zu,%zu,%zu], "
+           "local=[%zu,%zu,%zu])...\n",
+           global_size[0], global_size[1], global_size[2], local_size[0], local_size[1],
+           local_size[2]);
+    err = clEnqueueNDRangeKernel(queue, kernel, 3, NULL, global_size, local_size, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr, "[host_runner] Failed to enqueue kernel (err=%d)\n", err);
+    }
+
+    clFinish(queue);
+    clEnqueueReadBuffer(queue, d_dst, CL_TRUE, 0, sizeof(float) * total_elements, (void *)h_dst, 0,
+                        NULL, NULL);
+    printf("[host_runner] Result sample: dst[0]=%.1f, dst[255]=%.1f\n", h_dst[0],
+           h_dst[total_elements - 1]);
+
+    clReleaseMemObject(d_src);
+    clReleaseMemObject(d_dst);
+    free(h_src);
+    free(h_dst);
+    return (err == CL_SUCCESS) ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     const char *kernel_file = (argc > 1) ? argv[1] : "tests/kernels/hello_kernel.cl";
     const char *arg_kernel_name = (argc > 2) ? argv[2] : NULL;
@@ -290,6 +341,8 @@ int main(int argc, char **argv) {
         run_vec_add(context, queue, kernel);
     } else if (strcmp(kernel_name, "reduce_sum") == 0) {
         run_reduce_sum(context, queue, kernel);
+    } else if (strcmp(kernel_name, "volume_acc") == 0) {
+        run_volume_acc(context, queue, kernel);
     }
 
     clReleaseKernel(kernel);
