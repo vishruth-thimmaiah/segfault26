@@ -102,11 +102,24 @@ target_link_libraries(ocldbg_core PUBLIC
 )
 
 # -----------------------------------------------------------------------------
-# ocldbg CLI / DAP Executable
-# Owner: Person E
-# -----------------------------------------------------------------------------
+# Git commit hash for version reporting
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE OCLDBG_GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if (NOT OCLDBG_GIT_COMMIT)
+    set(OCLDBG_GIT_COMMIT "unknown")
+endif()
+
 add_executable(ocldbg
     ocldbg/main.cpp
+)
+target_compile_definitions(ocldbg PRIVATE
+    OCLDBG_GIT_COMMIT="${OCLDBG_GIT_COMMIT}"
+    OCLDBG_VERSION="${PROJECT_VERSION}"
 )
 target_link_libraries(ocldbg PRIVATE
     ocldbg_core
