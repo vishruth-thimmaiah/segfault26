@@ -1,43 +1,58 @@
 #include "WorkGroupTracker.h"
 
-// TODO (Person C): implement using POSIX shared memory.
-//
-// Shm layout (must match runtime_inject/wi_state_export.cpp):
-//   struct ShmHeader { uint32_t entry_count; uint32_t capacity; };
-//   struct ShmEntry  { uint64_t thread_id; uint32_t gx,gy,gz; uint32_t wgx,wgy,wgz; };
-//
-// The shim writes ShmEntry records atomically; this class reads them.
-
 namespace ocldbg {
 
 WorkGroupTracker::WorkGroupTracker() = default;
-WorkGroupTracker::~WorkGroupTracker() {
-    if (shm_fd_ >= 0) {
-        // TODO: close(shm_fd_); shm_unlink(...)
-    }
+WorkGroupTracker::~WorkGroupTracker() = default;
+
+void WorkGroupTracker::record_wg(uint64_t host_thread_id, const Size3 &wg_id) {
+    std::scoped_lock lk(mu_);
+    thread_to_wg_[host_thread_id] = wg_id;
+}
+
+void WorkGroupTracker::set_ndrange(const Size3 &global_size, const Size3 &local_size) {
+    std::scoped_lock lk(mu_);
+    global_size_ = global_size;
+    local_size_ = local_size;
+}
+
+void WorkGroupTracker::clear() {
+    std::scoped_lock lk(mu_);
+    thread_to_wg_.clear();
 }
 
 bool WorkGroupTracker::connect_shm() {
-    // TODO (Person C): shm_open(OCLDBG_SHM_NAME, O_RDONLY, 0)
-    //                  mmap it; store fd in shm_fd_
-    return false;
+    return true;
 }
 
 void WorkGroupTracker::refresh() {
-    // TODO (Person C): read ShmEntry records from mapped region;
-    // rebuild thread_to_wg_
+    // Under Option A (LLDB-native tracking), work-group dispatches are tracked
+    // dynamically through LLDB hooks.
 }
 
-uint64_t WorkGroupTracker::host_thread_for_wi(const Size3 & /*global_id*/) const {
-    // TODO (Person C): compute wg coord from global_id + NDRange dims,
-    // then reverse-lookup thread from thread_to_wg_
+uint64_t WorkGroupTracker::host_thread_for_wi(const Size3 &global_id) const {
+    std::scoped_lock lk(mu_);
+    size_t lx = (local_size_.x > 0) ? local_size_.x : 1;
+    size_t ly = (local_size_.y > 0) ? local_size_.y : 1;
+    size_t lz = (local_size_.z > 0) ? local_size_.z : 1;
+
+    Size3 target_wg{.x = global_id.x / lx, .y = global_id.y / ly, .z = global_id.z / lz};
+
+    for (const auto &[tid, wg] : thread_to_wg_) {
+        if (wg == target_wg) {
+            return tid;
+        }
+    }
     return 0;
 }
 
-Size3 WorkGroupTracker::wg_for_thread(uint64_t /*host_thread_id*/) const {
+Size3 WorkGroupTracker::wg_for_thread(uint64_t host_thread_id) const {
     std::scoped_lock lk(mu_);
-    // TODO (Person C)
-    return {};
+    auto it = thread_to_wg_.find(host_thread_id);
+    if (it != thread_to_wg_.end()) {
+        return it->second;
+    }
+    return {.x = 0, .y = 0, .z = 0};
 }
 
 } // namespace ocldbg

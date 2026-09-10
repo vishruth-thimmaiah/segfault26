@@ -79,12 +79,14 @@ set_target_properties(ocldbg_rt PROPERTIES
 # Core debugger library
 # -----------------------------------------------------------------------------
 add_library(ocldbg_core STATIC
+    ocldbg/DebuggerContext.cpp
     ocldbg/dwarf/DWARFSourceModel.cpp
     ocldbg/dwarf/LocationExprEval.cpp
     ocldbg/ocl_debug_model/OCLVariableResolver.cpp
     ocldbg/backends/cpu/PoclCPUBackend.cpp
     ocldbg/backends/cpu/WIContextExtractor.cpp
     ocldbg/backends/cpu/WorkGroupTracker.cpp
+    ocldbg/backends/cpu/x86_64/X86_64CPUABI.cpp
     ocldbg/backends/oclgrind/OclgrindBackend.cpp
     ocldbg/dap/DAPServer.cpp
 )
@@ -100,11 +102,24 @@ target_link_libraries(ocldbg_core PUBLIC
 )
 
 # -----------------------------------------------------------------------------
-# ocldbg CLI / DAP Executable
-# Owner: Person E
-# -----------------------------------------------------------------------------
+# Git commit hash for version reporting
+execute_process(
+    COMMAND git rev-parse --short HEAD
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    OUTPUT_VARIABLE OCLDBG_GIT_COMMIT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+)
+if (NOT OCLDBG_GIT_COMMIT)
+    set(OCLDBG_GIT_COMMIT "unknown")
+endif()
+
 add_executable(ocldbg
     ocldbg/main.cpp
+)
+target_compile_definitions(ocldbg PRIVATE
+    OCLDBG_GIT_COMMIT="${OCLDBG_GIT_COMMIT}"
+    OCLDBG_VERSION="${PROJECT_VERSION}"
 )
 target_link_libraries(ocldbg PRIVATE
     ocldbg_core
@@ -149,7 +164,7 @@ if (LLVM_LIT_BIN AND FILECHECK_BIN AND OpenCL_FOUND)
     )
     add_custom_target(runtests
         COMMAND ${LLVM_LIT_BIN} -v ${CMAKE_CURRENT_BINARY_DIR}/tests
-        DEPENDS test_host_runner
+        DEPENDS test_host_runner ocldbg
         COMMENT "Running LIT test suite for segfault26"
     )
     add_custom_target(check-lit DEPENDS runtests)

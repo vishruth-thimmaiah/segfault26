@@ -259,8 +259,8 @@ The hardest problems are:
 **Goal:** Prove the DWARF premise before writing any debugger code.
 
 Tasks:
-- [ ] Install pocl from source (`-DENABLE_LLVM=ON`)
-- [ ] Run a kernel through pocl's CPU driver using **pocl's own compilation pipeline**.
+- [x] Install pocl from source (`-DENABLE_LLVM=ON`)
+- [x] Run a kernel through pocl's CPU driver using **pocl's own compilation pipeline**.
   The correct way to test this is with pocl's documented debug environment variables:
 
 ```bash
@@ -281,26 +281,21 @@ dwarfdump /tmp/pocl-*/kernel*.o
   check (does the source produce DWARF at all?), but it does not reflect pocl's
   work-item lowering passes.
 
-- [ ] Verify: does pocl's `loops` work-group function still carry `!dbg` metadata
+- [x] Verify: does pocl's `loops` work-group function still carry `!dbg` metadata
   after work-item outlining? `-O0` is used as the initial controlled baseline because
   optimization, vectorization, and work-item transformations make source-level variable
   locations substantially harder to recover. LLVM has mechanisms for preserving variable
   locations through optimization (instruction-referencing debug info), but these are
   deferred until the `-O0` baseline is proven.
-- [ ] Establish: which generated function(s) correspond to which kernel source lines?
+- [x] Establish: which generated function(s) correspond to which kernel source lines?
   (pocl may generate wrapper or outline functions around the kernel body)
-- [ ] Determine: can LLDB associate a stopped host PC back to `kernel.cl:42`?
+- [x] Determine: can LLDB associate a stopped host PC back to `kernel.cl:42`?
 
 **Note on pocl environment variables:**
 `POCL_DEBUG=all` enables pocl diagnostic output. `POCL_DEBUG_LLVM_PASSES=1` enables
 LLVM pass diagnostics. `POCL_EXTRA_BUILD_FLAGS` injects compiler flags into pocl's
 kernel compilation. `POCL_LEAVE_KERNEL_COMPILER_TEMP_FILES=1` preserves intermediates.
 All are documented by pocl. Use them to observe and test — not replace — pocl's pipeline.
-
-**Deliverable:** A written record of exactly which DWARF survives pocl's pipeline, which
-is lost, and what the actual source→PC mapping looks like. This is the foundation for
-everything else. If DWARF does not survive adequately, the project pivots to
-instrumentation-based source location tracking before proceeding.
 
 ---
 
@@ -311,55 +306,47 @@ instrumentation-based source location tracking before proceeding.
 This is the core research problem for the CPU backend. Because pocl does **not** create
 one OS thread per work-item, we cannot simply map `pthread_t → (gx, gy, gz)`.
 
-#### Proposed instrumentation mechanism (to be validated against pocl internals)
+#### Resolution of Work-Group Tracking Mechanism (Option A: Breakpoint-Assisted / LLDB-Native)
 
-The plan below is a design proposal. Whether pocl's CPU driver can be instrumented at
-work-group execution boundaries **without modifying pocl's source** is an open research
-risk (see §9, item 3). It must be validated experimentally before this architecture
-is treated as confirmed.
+Experimental inspection of pocl 7.1 (`libpocl-devices-pthread.so`) revealed that:
+1. Pocl dispatches work-groups inside an internal `work_group_scheduler` loop by directly invoking
+   the kernel work-group function via an internal function pointer (`call *0xb8(%r14)`), with no
+   stable exported symbol called between work-groups. A standard symbol-interposition `LD_PRELOAD`
+   shim cannot hook individual work-group dispatches without modifying pocl source.
+2. In the System V AMD64 ABI, pocl passes work-group coordinates directly in registers upon entry to
+   `_pocl_kernel_<name>_workgroup`:
+   - `%rdx` = `group_id_x`
+   - `%rcx` = `group_id_y`
+   - `%r8`  = `group_id_z`
+3. Therefore, **Option A (Breakpoint-Assisted / LLDB-Native Tracking)** is adopted:
+   - When a kernel is loaded/enqueued, LLDB sets an internal breakpoint on `_pocl_kernel_<name>_workgroup`.
+   - On hit, `WorkGroupTracker` inspects the registers on the hitting thread (`thread.GetThreadID()`),
+     records `thread_to_wg_[tid] = {group_id_x, group_id_y, group_id_z}`, and resumes execution.
+   - This requires **zero modifications to pocl** and eliminates the need for an external shared-memory shim.
 
-Proposed approach: an LD_PRELOAD shim records at work-**group** dispatch granularity:
-
-```c
-// Goal: intercept at work-group dispatch time (not per work-item)
-// Whether this hook point is accessible via LD_PRELOAD is to be determined
-void __ocldbg_register_wg(
-    size_t group_x, size_t group_y, size_t group_z,
-    pthread_t host_tid,
-    void* wg_exec_context   // pocl internal WG context pointer
-);
-```
-
-If LD_PRELOAD proves insufficient (e.g. pocl's dispatch is internal to a library with
-no stable hook symbol), the fallback is to build pocl from source with minimal
-instrumentation patches at the work-group dispatch site.
-
-At a stopped PC inside the host thread, we know the host thread and can look up its
+At a stopped PC inside the host thread, `WorkGroupTracker` maps the host thread to its
 current work-group. Extracting the **current work-item** within that work-group then
 depends on the execution strategy:
 
 | pocl Strategy | Work-item identification at stopped PC |
 |---------------|----------------------------------------|
-| `loops`       | Loop induction variable in the frame (visible via DWARF local var) |
+| `loops`       | Loop induction variable in register/frame (e.g. `%rsi` or `%r10` / DWARF local var) |
 | `loopvec`     | Harder — SIMD lane; may need LLDB vector register inspection |
 | `cbs`         | Continuation state; requires understanding the CBS data structures |
 
 **For the initial prototype, explicitly target `loops` strategy only** with
-`-O0`/`-cl-opt-disable`. Document this constraint. This is the most tractable starting
-point and can be validated experimentally before tackling other strategies.
+`-O0`/`-cl-opt-disable`. Document this constraint.
 
 ```
-OCLWorkItem  (once shim mechanism is validated)
+OCLWorkItem
   .global_id  = group_offset + loop_induction_var
   .local_id   = loop_induction_var
-  .group_id   = from shim's WG registration
+  .group_id   = from WorkGroupTracker (recorded on WG function entry)
   .exec_ctx   = host_tid + frame
 ```
 
 **Deliverable:** Given a stopped host thread inside pocl's kernel execution, reliably
 recover `(gx, gy, gz)` for the current work-item. Validated on `reduction_bug.cl`.
-The shim mechanism is documented: either LD_PRELOAD works, or a minimal pocl patch is
-required — either outcome is recorded as a result.
 
 ---
 
@@ -852,9 +839,9 @@ watchpoint API.
 
 | # | Question | Impact | How to resolve |
 |---|----------|--------|----------------|
-| 1 | Does pocl's `loops` work-group function retain `!dbg` LLVM metadata after WI outlining? | Core M1 blocker | Use `POCL_EXTRA_BUILD_FLAGS="-g -cl-opt-disable" POCL_LEAVE_KERNEL_COMPILER_TEMP_FILES=1`; inspect generated `.ll` |
-| 2 | Is the loop induction variable for work-item ID reliably readable via LLDB at `-O0`? | M2 core assumption | Empirical — set BP inside loop, inspect LLDB frame locals |
-| 3 | **Can pocl's CPU driver be instrumented at WG execution boundaries without modifying pocl source?** | M2 core architecture | Inspect `lib/CL/devices/cpu/` dispatch path; attempt LD_PRELOAD; fall back to minimal source patch |
+| 1 | Does pocl's `loops` work-group function retain `!dbg` LLVM metadata after WI outlining? | Core M1 blocker | **Resolved (Verified):** `-g -cl-opt-disable` retains `!dbg` subprograms, variables (`#dbg_value`), and line tables in both `program.bc` and `parallel.bc`. |
+| 2 | Is the loop induction variable for work-item ID reliably readable via LLDB at `-O0`? | M2 core assumption | **Resolved (Verified):** The induction variable is readable in `%rsi` (simple loops) or `%r10` / stack context array (`reduce_sum`), stepping line-by-line accurately. |
+| 3 | **Can pocl's CPU driver be instrumented at WG execution boundaries without modifying pocl source?** | M2 core architecture | **Resolved:** Dispatch loop is internal (`call *0xb8(%r14)`); resolved via **Option A** (LLDB internal breakpoint on `_pocl_kernel_*_workgroup` reading `%rdx`, `%rcx`, `%r8`), avoiding shim complexity or pocl source patches. |
 | 4 | Does pocl emit correct `DW_AT_address_class` for OpenCL address spaces? | Variable annotation | Inspect DWARF output from pocl pipeline |
 | 5 | Does Oclgrind's `instructionExecuted` callback fire at IR instruction granularity? | M6 breakpoint precision | Read `src/core/Plugin.h` and `KernelInvocation.cpp` |
 | 6 | How does Oclgrind's existing interactive debugger retrieve named variable values? | M6 location backend | Read `src/plugins/InteractiveDebugger.cpp` |
