@@ -41,3 +41,13 @@ config.substitutions.append(("%test_host_runner", host_runner))
 config.substitutions.append(("%ocldbg", ocldbg))
 config.substitutions.append(("%FileCheck", filecheck))
 config.substitutions.append(("%llvm-dis", llvm_dis))
+
+for var in [
+    "PATH",
+    "LD_LIBRARY_PATH",
+    "OCL_ICD_VENDORS",
+    "POCL_CACHE_DIR",
+    "LLDB_DEBUGSERVER_PATH",
+]:
+    if var in os.environ:
+        config.environment[var] = os.environ[var]
