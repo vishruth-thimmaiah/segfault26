@@ -177,6 +177,28 @@ bool record_stopped_workgroups(lldb::SBProcess &process, CPUABI *abi, WorkGroupT
     return any_wg_hit;
 }
 
+void step_into_kernel(lldb::SBProcess &process, uint64_t hit_thread_id) {
+    uint32_t nthreads = process.GetNumThreads();
+    for (uint32_t i = 0; i < nthreads; ++i) {
+        lldb::SBThread t = process.GetThreadAtIndex(i);
+        if (t.IsValid() && t.GetThreadID() == hit_thread_id) {
+            t.StepInto();
+            // Step past workgroup wrapper prologue into the inlined kernel body
+            t.StepInto();
+            break;
+        }
+    }
+}
+
+void print_inspected_variables(const OCLWorkItem &wi, const std::vector<VarValue> &vars) {
+    std::cout << std::format("[ocldbg] Inspecting variables for stopped {}:\n", wi.str());
+    for (const auto &v : vars) {
+        std::string addr_sp = v.address_space.empty() ? "" : " " + v.address_space;
+        std::cout << std::format("  {} ({}{}) = {}\n", v.name, v.type_name, addr_sp,
+                                 v.available ? v.value_str : "<unavailable>");
+    }
+}
+
 } // namespace
 
 struct DebuggerContext::Impl {
@@ -339,31 +361,10 @@ size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars) {
         }
 
         if (inspect_vars && !inspected && hit_thread_id != 0) {
-            uint32_t nthreads = impl_->process.GetNumThreads();
-            lldb::SBThread target_thread;
-            for (uint32_t i = 0; i < nthreads; ++i) {
-                lldb::SBThread t = impl_->process.GetThreadAtIndex(i);
-                if (t.IsValid() && t.GetThreadID() == hit_thread_id) {
-                    target_thread = t;
-                    break;
-                }
-            }
-            if (target_thread.IsValid()) {
-                target_thread.StepInto();
-                // Step past workgroup wrapper prologue into the inlined kernel body
-                target_thread.StepInto();
-            }
-
+            step_into_kernel(impl_->process, hit_thread_id);
             auto wi = resolve_stopped_work_item(hit_thread_id);
             if (wi) {
-                auto vars = inspect_variables(*wi);
-                std::cout << std::format("[ocldbg] Inspecting variables for stopped {}:\n",
-                                         wi->str());
-                for (const auto &v : vars) {
-                    std::string addr_sp = v.address_space.empty() ? "" : " " + v.address_space;
-                    std::cout << std::format("  {} ({}{}) = {}\n", v.name, v.type_name, addr_sp,
-                                             v.available ? v.value_str : "<unavailable>");
-                }
+                print_inspected_variables(*wi, inspect_variables(*wi));
             }
             inspected = true;
         }
