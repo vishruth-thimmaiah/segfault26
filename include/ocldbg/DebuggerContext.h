@@ -23,6 +23,15 @@ struct CLIConfig {
     bool batch = false;
 };
 
+/// Represents a registered OpenCL source breakpoint.
+struct OCLBreakpoint {
+    size_t id = 0;
+    std::string file;
+    unsigned line = 0;
+    bool resolved = false;
+    uint64_t address = 0;
+};
+
 /// Encapsulates LLDB initialization, target creation, launch orchestration,
 /// NDRange call-site parameter inference, and DAP server handover.
 class DebuggerContext {
@@ -66,6 +75,21 @@ public:
 
     /// Set a source-line breakpoint in the loaded kernel module.
     bool set_source_breakpoint(unsigned line);
+
+    /// Add an OpenCL breakpoint by file (optional) and line number.
+    size_t add_ocl_breakpoint(const std::string &file, unsigned line);
+
+    /// Delete an OpenCL breakpoint by ID. Returns true if removed.
+    bool delete_ocl_breakpoint(size_t id);
+
+    /// List all registered OpenCL breakpoints.
+    [[nodiscard]] std::vector<OCLBreakpoint> list_ocl_breakpoints() const;
+
+    /// Attempt to resolve any pending OpenCL breakpoints using currently loaded modules.
+    bool resolve_pending_ocl_breakpoints();
+
+    /// Ensure the internal kernel workgroup trampoline breakpoint is armed on the target.
+    void ensure_ocl_trampoline();
 
     /// Inspect visible variables for a given work-item.
     [[nodiscard]] std::vector<VarValue> inspect_variables(const OCLWorkItem &wi);

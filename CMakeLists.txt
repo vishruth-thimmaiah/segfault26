@@ -137,6 +137,7 @@ endif()
 # -----------------------------------------------------------------------------
 add_library(ocldbg_core STATIC
     ocldbg/DebuggerContext.cpp
+    ocldbg/CustomCommands.cpp
     ocldbg/args.cpp
     ocldbg/cli.cpp
     ocldbg/dwarf/DWARFSourceModel.cpp

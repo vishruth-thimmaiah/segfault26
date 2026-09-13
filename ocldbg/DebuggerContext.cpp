@@ -260,6 +260,51 @@ void handle_first_dispatch_inspection(DebuggerContext &dbg, lldb::SBProcess &pro
     inspected = true;
 }
 
+bool is_kernel_module_name(std::string_view fn, const std::string &kernel_name) {
+    if (!kernel_name.empty() && fn.find(kernel_name) != std::string_view::npos) {
+        return true;
+    }
+    return fn.ends_with(".so") && !fn.starts_with("lib");
+}
+
+lldb::SBModule find_kernel_module(lldb::SBTarget &target, const std::string &kernel_name) {
+    uint32_t num_mods = target.GetNumModules();
+    for (uint32_t i = 0; i < num_mods; ++i) {
+        lldb::SBModule m = target.GetModuleAtIndex(i);
+        const char *fn = m.GetFileSpec().GetFilename();
+        if (fn != nullptr && is_kernel_module_name(fn, kernel_name)) {
+            return m;
+        }
+    }
+    return {};
+}
+
+bool resolve_one_breakpoint(InternalOCLBreakpoint &bp, lldb::SBModule &kernel_mod,
+                            lldb::SBTarget &target, const DWARFSourceModel &dwarf_model) {
+    if (bp.resolved) {
+        return false;
+    }
+    auto pcs = dwarf_model.source_to_pcs(SourceLocation{.file = bp.file, .line = bp.line});
+    if (pcs.empty()) {
+        return false;
+    }
+    lldb::SBAddress sb_addr = kernel_mod.ResolveFileAddress(pcs[0]);
+    lldb::addr_t load_addr = sb_addr.GetLoadAddress(target);
+    if (load_addr == LLDB_INVALID_ADDRESS) {
+        return false;
+    }
+    bp.sb_bp = target.BreakpointCreateByAddress(load_addr);
+    if (!bp.sb_bp.IsValid() || bp.sb_bp.GetNumLocations() == 0) {
+        return false;
+    }
+    bp.resolved = true;
+    bp.address = load_addr;
+    std::string fname = bp.file.empty() ? "<kernel>" : bp.file;
+    std::cout << std::format("[ocldbg] Breakpoint #{}: resolved at address {:#x} ({}:{})\n", bp.id,
+                             load_addr, fname, bp.line);
+    return true;
+}
+
 } // namespace
 
 std::string DebuggerContext::init() {
@@ -473,22 +518,122 @@ bool DebuggerContext::load_kernel_dwarf() {
     if (impl_->dwarf_model.loaded()) {
         return true;
     }
-    uint32_t num_mods = impl_->target.GetNumModules();
-    for (uint32_t i = 0; i < num_mods; ++i) {
-        lldb::SBModule m = impl_->target.GetModuleAtIndex(i);
-        const char *fn = m.GetFileSpec().GetFilename();
-        if (fn != nullptr) {
-            std::string_view fn_sv(fn);
-            if (fn_sv.find(impl_->kernel_name) != std::string_view::npos) {
-                std::array<char, 1024> path{};
-                if (m.GetFileSpec().GetPath(path.data(), path.size()) > 0) {
-                    bool loaded = impl_->dwarf_model.load(path.data());
-                    return loaded;
-                }
-            }
-        }
+    if (!impl_->target.IsValid()) {
+        impl_->target = impl_->debugger.GetSelectedTarget();
+    }
+    if (!impl_->target.IsValid()) {
+        return false;
+    }
+    lldb::SBModule m = find_kernel_module(impl_->target, impl_->kernel_name);
+    if (!m.IsValid()) {
+        return false;
+    }
+    std::array<char, 1024> path{};
+    if (m.GetFileSpec().GetPath(path.data(), path.size()) > 0) {
+        return impl_->dwarf_model.load(path.data());
     }
     return false;
+}
+
+void DebuggerContext::ensure_ocl_trampoline() {
+    if (!impl_->target.IsValid()) {
+        impl_->target = impl_->debugger.GetSelectedTarget();
+    }
+    if (!impl_->target.IsValid()) {
+        return;
+    }
+    if (impl_->ocl_trampoline_bp.IsValid()) {
+        return;
+    }
+    impl_->ocl_trampoline_bp = impl_->target.BreakpointCreateByRegex(".*_workgroup");
+    if (!impl_->ocl_trampoline_bp.IsValid()) {
+        return;
+    }
+    impl_->ocl_trampoline_bp.SetCallback(
+        [](void *baton, lldb::SBProcess & /*process*/, lldb::SBThread & /*thread*/,
+           lldb::SBBreakpointLocation & /*location*/) -> bool {
+            auto *dbg = static_cast<DebuggerContext *>(baton);
+            if (dbg != nullptr) {
+                dbg->resolve_pending_ocl_breakpoints();
+            }
+            return false;
+        },
+        this);
+}
+
+size_t DebuggerContext::add_ocl_breakpoint(const std::string &file, unsigned line) {
+    if (!impl_->target.IsValid()) {
+        impl_->target = impl_->debugger.GetSelectedTarget();
+    }
+    size_t id = impl_->next_ocl_bp_id++;
+    impl_->ocl_breakpoints.push_back(InternalOCLBreakpoint{
+        .id = id,
+        .file = file,
+        .line = line,
+        .resolved = false,
+        .address = 0,
+        .sb_bp = {},
+    });
+
+    resolve_pending_ocl_breakpoints();
+    ensure_ocl_trampoline();
+    return id;
+}
+
+bool DebuggerContext::delete_ocl_breakpoint(size_t id) {
+    auto it = std::find_if(impl_->ocl_breakpoints.begin(), impl_->ocl_breakpoints.end(),
+                           [id](const auto &bp) { return bp.id == id; });
+    if (it == impl_->ocl_breakpoints.end()) {
+        return false;
+    }
+    if (it->sb_bp.IsValid() && impl_->target.IsValid()) {
+        impl_->target.BreakpointDelete(it->sb_bp.GetID());
+    }
+    impl_->ocl_breakpoints.erase(it);
+    return true;
+}
+
+std::vector<OCLBreakpoint> DebuggerContext::list_ocl_breakpoints() const {
+    std::vector<OCLBreakpoint> result;
+    result.reserve(impl_->ocl_breakpoints.size());
+    for (const auto &bp : impl_->ocl_breakpoints) {
+        result.push_back(OCLBreakpoint{
+            .id = bp.id,
+            .file = bp.file,
+            .line = bp.line,
+            .resolved = bp.resolved,
+            .address = bp.address,
+        });
+    }
+    return result;
+}
+
+bool DebuggerContext::resolve_pending_ocl_breakpoints() {
+    if (!impl_->target.IsValid()) {
+        impl_->target = impl_->debugger.GetSelectedTarget();
+    }
+    if (!impl_->target.IsValid()) {
+        return false;
+    }
+
+    bool has_pending =
+        std::ranges::any_of(impl_->ocl_breakpoints, [](const auto &bp) { return !bp.resolved; });
+    if (!has_pending || !load_kernel_dwarf()) {
+        return false;
+    }
+
+    lldb::SBModule kernel_mod = find_kernel_module(impl_->target, impl_->kernel_name);
+    if (!kernel_mod.IsValid()) {
+        return false;
+    }
+
+    bool any_resolved = false;
+    for (auto &bp : impl_->ocl_breakpoints) {
+        if (resolve_one_breakpoint(bp, kernel_mod, impl_->target, impl_->dwarf_model)) {
+            any_resolved = true;
+        }
+    }
+    return any_resolved;
 }
 
 std::vector<VarValue> DebuggerContext::inspect_variables(const OCLWorkItem &wi) {
