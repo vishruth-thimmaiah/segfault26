@@ -127,6 +127,39 @@ void handle_break_command(DebuggerContext &dbg, std::string_view subcmd) {
     handle_break_add(dbg, subcmd);
 }
 
+void handle_print_command(DebuggerContext &dbg, std::string_view arg) {
+    arg = trim(arg);
+    if (arg.empty()) {
+        std::cerr << "[ocldbg] Error: Missing variable name to print (usage: ocl print <name>)\n";
+        return;
+    }
+    auto val = dbg.get_variable_value(std::string(arg));
+    if (!val.has_value()) {
+        std::cout << std::format("[ocldbg] Variable '{}' not found in current scope\n", arg);
+        return;
+    }
+    std::string addr_sp = val->address_space.empty() ? "" : " " + val->address_space;
+    if (val->available) {
+        std::cout << std::format("({}{}) {} = {}\n", val->type_name, addr_sp, val->name,
+                                 val->value_str);
+    } else {
+        std::cout << std::format("({}{}) {} = <unavailable>\n", val->type_name, addr_sp, val->name);
+    }
+}
+
+void handle_vars_command(DebuggerContext &dbg) {
+    auto vars = dbg.inspect_current_frame_variables();
+    if (vars.empty()) {
+        std::cout << "[ocldbg] No variables in scope or process not stopped in OpenCL kernel\n";
+        return;
+    }
+    for (const auto &v : vars) {
+        std::string addr_sp = v.address_space.empty() ? "" : " " + v.address_space;
+        std::cout << std::format("  {} ({}{}) = {}\n", v.name, v.type_name, addr_sp,
+                                 v.available ? v.value_str : "<unavailable>");
+    }
+}
+
 } // namespace
 
 bool handle_ocl_command(DebuggerContext &dbg, std::string_view cmd) {
@@ -146,6 +179,23 @@ bool handle_ocl_command(DebuggerContext &dbg, std::string_view cmd) {
     if (cmd.starts_with("b ") || cmd == "b") {
         cmd.remove_prefix(std::min<size_t>(cmd.size(), 1));
         handle_break_command(dbg, cmd);
+        return true;
+    }
+
+    if (cmd.starts_with("print ") || cmd == "print") {
+        cmd.remove_prefix(std::min<size_t>(cmd.size(), 5));
+        handle_print_command(dbg, cmd);
+        return true;
+    }
+
+    if (cmd.starts_with("p ") || cmd == "p") {
+        cmd.remove_prefix(std::min<size_t>(cmd.size(), 1));
+        handle_print_command(dbg, cmd);
+        return true;
+    }
+
+    if (cmd == "vars" || cmd.starts_with("vars ") || cmd == "v" || cmd.starts_with("v ")) {
+        handle_vars_command(dbg);
         return true;
     }
 

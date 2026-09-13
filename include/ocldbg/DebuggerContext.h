@@ -94,6 +94,12 @@ public:
     /// Inspect visible variables for a given work-item.
     [[nodiscard]] std::vector<VarValue> inspect_variables(const OCLWorkItem &wi);
 
+    /// Inspect visible variables in the currently stopped frame.
+    [[nodiscard]] std::vector<VarValue> inspect_current_frame_variables();
+
+    /// Fetch a specific variable by name in the currently stopped frame.
+    [[nodiscard]] std::optional<VarValue> get_variable_value(const std::string &name);
+
     /// Given a stopped host thread ID, resolve the active OCLWorkItem by combining
     /// the WorkGroupTracker (WG coordinates) with WIContextExtractor (local ID).
     [[nodiscard]] std::optional<OCLWorkItem> resolve_stopped_work_item(uint64_t thread_id) const;

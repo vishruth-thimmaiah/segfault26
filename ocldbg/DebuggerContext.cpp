@@ -643,6 +643,67 @@ std::vector<VarValue> DebuggerContext::inspect_variables(const OCLWorkItem &wi) 
     return resolver.resolve(wi, backend);
 }
 
+std::vector<VarValue> DebuggerContext::inspect_current_frame_variables() {
+    if (!impl_->target.IsValid()) {
+        impl_->target = impl_->debugger.GetSelectedTarget();
+    }
+    if (!impl_->target.IsValid()) {
+        return {};
+    }
+    impl_->process = impl_->target.GetProcess();
+    if (!impl_->process.IsValid() || impl_->process.GetState() != lldb::eStateStopped) {
+        return {};
+    }
+
+    lldb::SBThread thread = impl_->process.GetSelectedThread();
+    if (!thread.IsValid() || thread.GetStopReason() == lldb::eStopReasonNone) {
+        uint32_t nthreads = impl_->process.GetNumThreads();
+        for (uint32_t i = 0; i < nthreads; ++i) {
+            lldb::SBThread t = impl_->process.GetThreadAtIndex(i);
+            if (t.IsValid() && t.GetStopReason() != lldb::eStopReasonNone) {
+                thread = t;
+                break;
+            }
+        }
+    }
+    if (!thread.IsValid()) {
+        return {};
+    }
+
+    lldb::SBFrame frame = thread.GetSelectedFrame();
+    if (!frame.IsValid()) {
+        frame = thread.GetFrameAtIndex(0);
+    }
+    if (!frame.IsValid()) {
+        return {};
+    }
+
+    OCLWorkItem wi;
+    auto resolved = resolve_stopped_work_item(thread.GetThreadID());
+    if (resolved.has_value()) {
+        wi = *resolved;
+    } else {
+        auto ctx = std::make_shared<CPUExecContext>();
+        ctx->host_thread_id = thread.GetThreadID();
+        ctx->frame = frame;
+        ctx->thread = thread;
+        wi.exec_ctx_storage = ctx;
+        wi.exec_ctx = ctx.get();
+    }
+
+    return inspect_variables(wi);
+}
+
+std::optional<VarValue> DebuggerContext::get_variable_value(const std::string &name) {
+    auto vars = inspect_current_frame_variables();
+    for (const auto &v : vars) {
+        if (v.name == name) {
+            return v;
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<OCLWorkItem> DebuggerContext::resolve_stopped_work_item(uint64_t thread_id) const {
     if (!impl_->launch_info || !impl_->abi) {
         return std::nullopt;

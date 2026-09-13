@@ -1,10 +1,4 @@
-// RUN: %ocldbg -b -o "ocl break reduction_bug.cl:23" -o "ocl break list" -o "run" -o "ocl break delete 1" -o "c" %test_host_runner %s reduce_sum | %FileCheck %s
-
-/**
- * ocl_break.cl — Verifies that 'ocl break' sets pending breakpoints on OpenCL
- * source lines, resolves them upon kernel dispatch, stops worker threads,
- * and allows deleting breakpoints and resuming execution.
- */
+// RUN: env POCL_CACHE_DIR=%t.kcache POCL_CPU_NUM_WORKERS=1 %ocldbg -b -o "ocl break ocl_break.cl:11" -o "ocl break list" -o "run" -o "ocl p acc" -o "ocl print n" -o "ocl vars" -o "c" -o "ocl p acc" -o "c" -o "c" -o "c" -o "c" -o "ocl p acc" -o "ocl break delete 1" -o "c" %test_host_runner %s reduce_sum | %FileCheck %s
 
 __kernel void reduce_sum(__global const float *src,
                          __global float       *dst,
@@ -20,16 +14,35 @@ __kernel void reduce_sum(__global const float *src,
     dst[gx] = acc;
 }
 
-// CHECK: (ocldbg) ocl break reduction_bug.cl:23
-// CHECK: [ocldbg] Breakpoint #1 (pending) set at reduction_bug.cl:23
+// CHECK: (ocldbg) ocl break ocl_break.cl:11
+// CHECK: [ocldbg] Breakpoint #1 (pending) set at ocl_break.cl:11
 // CHECK: (ocldbg) ocl break list
 // CHECK: [ocldbg] OpenCL Breakpoints:
-// CHECK:   #1: reduction_bug.cl:23 (pending)
+// CHECK:   #1: ocl_break.cl:11 (pending)
 // CHECK: (ocldbg) run
-// CHECK: [ocldbg] Breakpoint #1: resolved at address 0x{{[0-9a-fA-F]+}} (reduction_bug.cl:23)
+// CHECK: [ocldbg] Breakpoint #1: resolved at address 0x{{[0-9a-fA-F]+}} (ocl_break.cl:11)
 // CHECK: Process {{[0-9]+}} stopped
 // CHECK: stop reason = breakpoint
-// CHECK: at tempfile_{{[0-9a-zA-Z]+}}.cl:23
+// CHECK: at tempfile_{{[0-9a-zA-Z]+}}.cl:11
+// CHECK: (ocldbg) ocl p acc
+// CHECK: (float) acc = 0.000000
+// CHECK: (ocldbg) ocl print n
+// CHECK: (int) n = 4
+// CHECK: (ocldbg) ocl vars
+// CHECK-DAG: src (const float * __global) = 0x{{[0-9a-fA-F]+}}
+// CHECK-DAG: dst (float * __global) = 0x{{[0-9a-fA-F]+}}
+// CHECK-DAG: n (int) = 4
+// CHECK-DAG: acc (float) = 0.000000
+// CHECK: (ocldbg) c
+// CHECK: Process {{[0-9]+}} stopped
+// CHECK: (ocldbg) ocl p acc
+// CHECK: (float) acc = 1.000000
+// CHECK: (ocldbg) c
+// CHECK: (ocldbg) c
+// CHECK: (ocldbg) c
+// CHECK: (ocldbg) c
+// CHECK: (ocldbg) ocl p acc
+// CHECK: (float) acc = 2.000000
 // CHECK: (ocldbg) ocl break delete 1
 // CHECK: [ocldbg] Deleted OpenCL breakpoint #1
 // CHECK: (ocldbg) c
