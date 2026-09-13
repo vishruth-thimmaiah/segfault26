@@ -6,6 +6,7 @@
 #include <cctype>
 #include <format>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -160,6 +161,61 @@ void handle_vars_command(DebuggerContext &dbg) {
     }
 }
 
+void handle_select_command(DebuggerContext &dbg, std::string_view arg) {
+    arg = trim(arg);
+    if (arg.empty() || arg == "list") {
+        auto wis = dbg.list_stopped_work_items();
+        if (wis.empty()) {
+            std::cout << "[ocldbg] No stopped work-items available\n";
+            return;
+        }
+        auto selected = dbg.get_selected_work_item();
+        std::cout << "[ocldbg] Stopped work-items:\n";
+        for (const auto &wi : wis) {
+            bool is_sel = selected.has_value() && (selected->global_id == wi.global_id ||
+                                                   selected->group_id == wi.group_id);
+            std::string prefix = is_sel ? "* " : "  ";
+            std::cout << std::format("{}{} [work-group {}]\n", prefix, wi.str(), wi.group_id.str());
+        }
+        return;
+    }
+
+    size_t gx = 0;
+    size_t gy = 0;
+    size_t gz = 0;
+    std::string s(arg);
+    std::istringstream iss(s);
+    if (!(iss >> gx)) {
+        std::cerr << "[ocldbg] Error: Invalid work-item coordinate (usage: ocl select <gx> [<gy> "
+                     "[<gz>]])\n";
+        return;
+    }
+    if (!(iss >> gy)) {
+        gy = 0;
+    }
+    if (!(iss >> gz)) {
+        gz = 0;
+    }
+
+    Size3 target_id{.x = gx, .y = gy, .z = gz};
+    if (dbg.select_work_item(target_id)) {
+        std::cout << std::format("[ocldbg] Selected work-item WI{}\n", target_id.str());
+    } else {
+        std::cout << std::format("[ocldbg] Work-item WI{} not found among active work-items\n",
+                                 target_id.str());
+    }
+}
+
+void handle_workitem_command(DebuggerContext &dbg, std::string_view arg) {
+    arg = trim(arg);
+    if (arg.starts_with("select ") || arg == "select") {
+        arg.remove_prefix(std::min<size_t>(arg.size(), 6));
+        handle_select_command(dbg, arg);
+        return;
+    }
+    handle_select_command(dbg, arg);
+}
+
 } // namespace
 
 bool handle_ocl_command(DebuggerContext &dbg, std::string_view cmd) {
@@ -196,6 +252,24 @@ bool handle_ocl_command(DebuggerContext &dbg, std::string_view cmd) {
 
     if (cmd == "vars" || cmd.starts_with("vars ") || cmd == "v" || cmd.starts_with("v ")) {
         handle_vars_command(dbg);
+        return true;
+    }
+
+    if (cmd.starts_with("select ") || cmd == "select") {
+        cmd.remove_prefix(std::min<size_t>(cmd.size(), 6));
+        handle_select_command(dbg, cmd);
+        return true;
+    }
+
+    if (cmd.starts_with("workitem ") || cmd == "workitem") {
+        cmd.remove_prefix(std::min<size_t>(cmd.size(), 8));
+        handle_workitem_command(dbg, cmd);
+        return true;
+    }
+
+    if (cmd.starts_with("wi ") || cmd == "wi") {
+        cmd.remove_prefix(std::min<size_t>(cmd.size(), 2));
+        handle_workitem_command(dbg, cmd);
         return true;
     }
 

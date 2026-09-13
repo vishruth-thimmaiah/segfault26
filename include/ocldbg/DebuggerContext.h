@@ -100,6 +100,15 @@ public:
     /// Fetch a specific variable by name in the currently stopped frame.
     [[nodiscard]] std::optional<VarValue> get_variable_value(const std::string &name);
 
+    /// Select a specific OpenCL work-item by global coordinate.
+    bool select_work_item(const Size3 &global_id);
+
+    /// Return the currently selected work-item, if any.
+    [[nodiscard]] std::optional<OCLWorkItem> get_selected_work_item() const;
+
+    /// List all currently stopped work-items.
+    [[nodiscard]] std::vector<OCLWorkItem> list_stopped_work_items() const;
+
     /// Given a stopped host thread ID, resolve the active OCLWorkItem by combining
     /// the WorkGroupTracker (WG coordinates) with WIContextExtractor (local ID).
     [[nodiscard]] std::optional<OCLWorkItem> resolve_stopped_work_item(uint64_t thread_id) const;

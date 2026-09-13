@@ -128,6 +128,14 @@ std::string DWARFSourceModel::type_name(uint64_t dwarf_type_offset) const {
         }
         return "const";
     }
+    case dwarf::DW_TAG_volatile_type:
+    case dwarf::DW_TAG_restrict_type: {
+        DWARFDie base = type_die.getAttributeValueAsReferencedDie(dwarf::DW_AT_type);
+        if (base.isValid()) {
+            return type_name(base.getOffset());
+        }
+        return "void";
+    }
     case dwarf::DW_TAG_array_type: {
         DWARFDie elem = type_die.getAttributeValueAsReferencedDie(dwarf::DW_AT_type);
         if (elem.isValid()) {

@@ -104,8 +104,8 @@ bool X86_64CPUABI::read_workgroup_id(lldb::SBFrame frame, Size3 &out_wg) {
     }
 
     out_wg.x = gx;
-    out_wg.y = found_y ? gy : 0;
-    out_wg.z = found_z ? gz : 0;
+    out_wg.y = (found_y && gy < 0x100000) ? gy : 0;
+    out_wg.z = (found_z && gz < 0x100000) ? gz : 0;
     return true;
 }
 

@@ -550,15 +550,186 @@ void DebuggerContext::ensure_ocl_trampoline() {
         return;
     }
     impl_->ocl_trampoline_bp.SetCallback(
-        [](void *baton, lldb::SBProcess & /*process*/, lldb::SBThread & /*thread*/,
+        [](void *baton, lldb::SBProcess & /*process*/, lldb::SBThread &thread,
            lldb::SBBreakpointLocation & /*location*/) -> bool {
             auto *dbg = static_cast<DebuggerContext *>(baton);
             if (dbg != nullptr) {
                 dbg->resolve_pending_ocl_breakpoints();
+                lldb::SBFrame f = thread.GetSelectedFrame();
+                if (!f.IsValid()) {
+                    f = thread.GetFrameAtIndex(0);
+                }
+                Size3 wg_id;
+                if (dbg->impl_->abi && dbg->impl_->abi->read_workgroup_id(f, wg_id)) {
+                    dbg->impl_->wg_tracker.record_wg(thread.GetThreadID(), wg_id);
+                }
             }
             return false;
         },
         this);
+}
+
+static Size3 get_local_dims(const std::optional<KernelLaunchInfo> &info) {
+    if (info.has_value()) {
+        const auto &ls = info->local_size;
+        return Size3{
+            .x = (ls.x > 0) ? ls.x : 1, .y = (ls.y > 0) ? ls.y : 1, .z = (ls.z > 0) ? ls.z : 1};
+    }
+    return Size3{.x = 4, .y = 1, .z = 1};
+}
+
+static bool match_wg(const Size3 &wg_id, const Size3 &target_wg) {
+    return wg_id.x == target_wg.x && (target_wg.y == 0 || wg_id.y == target_wg.y) &&
+           (target_wg.z == 0 || wg_id.z == target_wg.z);
+}
+
+static lldb::SBThread find_thread_for_target_wg(lldb::SBProcess &proc, CPUABI *abi,
+                                                WorkGroupTracker &tracker, const Size3 &target_wg,
+                                                const Size3 &global_id) {
+    uint32_t num_threads = proc.GetNumThreads();
+    for (uint32_t i = 0; i < num_threads; ++i) {
+        lldb::SBThread t = proc.GetThreadAtIndex(i);
+        if (!t.IsValid() || t.GetStopReason() == lldb::eStopReasonNone) {
+            continue;
+        }
+        lldb::SBFrame f = t.GetFrameAtIndex(0);
+        if (!f.IsValid()) {
+            continue;
+        }
+
+        Size3 wg_id;
+        if (abi != nullptr && abi->read_workgroup_id(f, wg_id)) {
+            tracker.record_wg(t.GetThreadID(), wg_id);
+            if (match_wg(wg_id, target_wg)) {
+                return t;
+            }
+        }
+    }
+
+    uint64_t tid = tracker.host_thread_for_wi(global_id);
+    if (tid != 0) {
+        for (uint32_t i = 0; i < num_threads; ++i) {
+            lldb::SBThread t = proc.GetThreadAtIndex(i);
+            if (t.IsValid() && t.GetThreadID() == tid &&
+                t.GetStopReason() != lldb::eStopReasonNone) {
+                return t;
+            }
+        }
+    }
+
+    return {};
+}
+
+bool DebuggerContext::select_work_item(const Size3 &global_id) {
+    if (!impl_->target.IsValid()) {
+        impl_->target = impl_->debugger.GetSelectedTarget();
+    }
+    if (!impl_->target.IsValid()) {
+        return false;
+    }
+    impl_->process = impl_->target.GetProcess();
+    if (!impl_->process.IsValid() || impl_->process.GetState() != lldb::eStateStopped) {
+        return false;
+    }
+
+    Size3 local_dims = get_local_dims(impl_->launch_info);
+    Size3 target_wg{.x = global_id.x / local_dims.x,
+                    .y = global_id.y / local_dims.y,
+                    .z = global_id.z / local_dims.z};
+    Size3 target_local{.x = global_id.x % local_dims.x,
+                       .y = global_id.y % local_dims.y,
+                       .z = global_id.z % local_dims.z};
+
+    lldb::SBThread matched_thread = find_thread_for_target_wg(
+        impl_->process, impl_->abi.get(), impl_->wg_tracker, target_wg, global_id);
+
+    if (!matched_thread.IsValid()) {
+        return false;
+    }
+
+    impl_->process.SetSelectedThread(matched_thread);
+    lldb::SBFrame frame = matched_thread.GetSelectedFrame();
+    if (!frame.IsValid()) {
+        frame = matched_thread.GetFrameAtIndex(0);
+    }
+
+    OCLWorkItem wi;
+    wi.global_id = global_id;
+    wi.group_id = target_wg;
+    wi.local_id = target_local;
+    auto ctx = std::make_shared<CPUExecContext>();
+    ctx->host_thread_id = matched_thread.GetThreadID();
+    ctx->thread = matched_thread;
+    ctx->frame = frame;
+    wi.exec_ctx_storage = ctx;
+    wi.exec_ctx = ctx.get();
+
+    impl_->selected_work_item = wi;
+    return true;
+}
+
+std::optional<OCLWorkItem> DebuggerContext::get_selected_work_item() const {
+    return impl_->selected_work_item;
+}
+
+std::vector<OCLWorkItem> DebuggerContext::list_stopped_work_items() const {
+    std::vector<OCLWorkItem> result;
+    if (!impl_->target.IsValid()) {
+        impl_->target = impl_->debugger.GetSelectedTarget();
+    }
+    if (!impl_->target.IsValid()) {
+        return result;
+    }
+    impl_->process = impl_->target.GetProcess();
+    if (!impl_->process.IsValid() || impl_->process.GetState() != lldb::eStateStopped) {
+        return result;
+    }
+
+    size_t lx = 1;
+    if (impl_->launch_info.has_value() && impl_->launch_info->local_size.x > 0) {
+        lx = impl_->launch_info->local_size.x;
+    } else {
+        lx = 4;
+    }
+
+    uint32_t num_threads = impl_->process.GetNumThreads();
+    for (uint32_t i = 0; i < num_threads; ++i) {
+        lldb::SBThread t = impl_->process.GetThreadAtIndex(i);
+        if (!t.IsValid() || t.GetStopReason() == lldb::eStopReasonNone) {
+            continue;
+        }
+        lldb::SBFrame f = t.GetFrameAtIndex(0);
+        if (!f.IsValid()) {
+            continue;
+        }
+
+        OCLWorkItem wi;
+        Size3 wg_id;
+        bool has_wg = (impl_->abi != nullptr) && impl_->abi->read_workgroup_id(f, wg_id);
+
+        if (has_wg) {
+            impl_->wg_tracker.record_wg(t.GetThreadID(), wg_id);
+            wi.group_id = Size3{.x = wg_id.x, .y = (wg_id.y < 0x100000) ? wg_id.y : 0, .z = 0};
+            Size3 loc_id;
+            impl_->abi->read_local_id(f, Size3{.x = lx, .y = 1, .z = 1}, loc_id);
+            wi.local_id = loc_id;
+            wi.global_id = Size3{.x = (wi.group_id.x * lx) + loc_id.x, .y = 0, .z = 0};
+        } else {
+            wi.global_id = Size3{.x = 0, .y = 0, .z = 0};
+            wi.group_id = Size3{.x = 0, .y = 0, .z = 0};
+            wi.local_id = Size3{.x = 0, .y = 0, .z = 0};
+        }
+
+        auto ctx = std::make_shared<CPUExecContext>();
+        ctx->host_thread_id = t.GetThreadID();
+        ctx->thread = t;
+        ctx->frame = f;
+        wi.exec_ctx_storage = ctx;
+        wi.exec_ctx = ctx.get();
+
+        result.push_back(wi);
+    }
+    return result;
 }
 
 size_t DebuggerContext::add_ocl_breakpoint(const std::string &file, unsigned line) {
@@ -653,6 +824,10 @@ std::vector<VarValue> DebuggerContext::inspect_current_frame_variables() {
     impl_->process = impl_->target.GetProcess();
     if (!impl_->process.IsValid() || impl_->process.GetState() != lldb::eStateStopped) {
         return {};
+    }
+
+    if (impl_->selected_work_item.has_value() && impl_->selected_work_item->exec_ctx != nullptr) {
+        return inspect_variables(*impl_->selected_work_item);
     }
 
     lldb::SBThread thread = impl_->process.GetSelectedThread();
