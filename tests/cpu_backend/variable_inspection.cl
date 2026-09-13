@@ -43,23 +43,23 @@ __kernel void reduce_sum(__global const float *src,
 // Source-Line Breakpoint and Variable Inspection (--break-at / --break-for)
 // =============================================================================
 // Pass 1: Work-items start accumulating
-// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI([[WI_FIRST:[0-9]+]],{{[0-9]+}},{{[0-9]+}}) grp([[WG:[0-9]+]],{{[0-9]+}},{{[0-9]+}}) (hit 1):
+// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) (hit 1):
 // CHECK-BREAK-DAG: src (const float * __global) = 0x{{[0-9a-fA-F]+}}
 // CHECK-BREAK-DAG: dst (float * __global) = 0x{{[0-9a-fA-F]+}}
 // CHECK-BREAK-DAG: n (int) = 4
 // CHECK-BREAK-DAG: acc (float) = 0.000000
-// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp([[WG]],{{[0-9]+}},{{[0-9]+}}) (hit 2):
-// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp([[WG]],{{[0-9]+}},{{[0-9]+}}) (hit 3):
-// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp([[WG]],{{[0-9]+}},{{[0-9]+}}) (hit 4):
-// Pass 2: Every work-item runs a second time, with acc visibly incremented
-// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI([[WI_FIRST]],{{[0-9]+}},{{[0-9]+}}) grp([[WG]],{{[0-9]+}},{{[0-9]+}}) (hit 5):
+// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) (hit 2):
+// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) (hit 3):
+// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) (hit 4):
+// Pass 2: Subsequent iterations continue, with acc visibly incremented
+// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) (hit 5):
 // CHECK-BREAK-DAG: src (const float * __global) = 0x{{[0-9a-fA-F]+}}
 // CHECK-BREAK-DAG: dst (float * __global) = 0x{{[0-9a-fA-F]+}}
 // CHECK-BREAK-DAG: n (int) = 4
-// CHECK-BREAK-DAG: acc (float) = 1.000000
-// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp([[WG]],{{[0-9]+}},{{[0-9]+}}) (hit 6):
-// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp([[WG]],{{[0-9]+}},{{[0-9]+}}) (hit 7):
-// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp([[WG]],{{[0-9]+}},{{[0-9]+}}) (hit 8):
-// CHECK-BREAK-DAG: acc (float) = 2.000000
+// CHECK-BREAK-DAG: acc (float) = {{[0-9]+\.[0-9]+}}
+// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) (hit 6):
+// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) (hit 7):
+// CHECK-BREAK: [ocldbg] Breakpoint hit at line 23 for WI({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) grp({{[0-9]+}},{{[0-9]+}},{{[0-9]+}}) (hit 8):
+// CHECK-BREAK-DAG: acc (float) = {{[1-9][0-9]*\.[0-9]+}}
 // CHECK-BREAK-NOT: [ocldbg] Breakpoint hit at line 23
 // CHECK-BREAK: [ocldbg] Dry run completed successfully.

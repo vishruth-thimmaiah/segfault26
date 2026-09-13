@@ -4,7 +4,7 @@ import lit.formats
 
 config.name = "segfault26"
 config.test_format = lit.formats.ShTest(True)
-config.suffixes = [".cl", ".ll", ".test"]
+config.suffixes = [".cl", ".ll", ".test", ".cpp"]
 
 config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = getattr(
@@ -36,11 +36,13 @@ if not filecheck or not os.path.exists(filecheck):
     filecheck = shutil.which("FileCheck") or "FileCheck"
 
 llvm_dis = shutil.which("llvm-dis") or "llvm-dis"
+clangxx = shutil.which("clang++") or "clang++"
 
 config.substitutions.append(("%test_host_runner", host_runner))
 config.substitutions.append(("%ocldbg", ocldbg))
 config.substitutions.append(("%FileCheck", filecheck))
 config.substitutions.append(("%llvm-dis", llvm_dis))
+config.substitutions.append(("%clangxx", clangxx))
 
 for var in [
     "PATH",

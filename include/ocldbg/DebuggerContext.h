@@ -12,6 +12,17 @@
 
 namespace ocldbg {
 
+/// Configuration for an interactive or batch CLI session.
+struct CLIConfig {
+    std::string host_binary;
+    std::vector<std::string> host_args;
+    std::vector<std::string> one_line_before;
+    std::vector<std::string> source_before;
+    std::vector<std::string> source_after;
+    std::vector<std::string> one_line_after;
+    bool batch = false;
+};
+
 /// Encapsulates LLDB initialization, target creation, launch orchestration,
 /// NDRange call-site parameter inference, and DAP server handover.
 class DebuggerContext {
@@ -71,6 +82,10 @@ public:
 
     /// Hand over execution to the DAP server.
     int run_dap(const std::string &backend_name, uint16_t dap_port);
+
+    /// Run an interactive or batch CLI session, executing pre-session commands and
+    /// passing interactive commands to LLDB (or handling 'ocl' commands).
+    int run_cli(const CLIConfig &config = {});
 
 private:
     struct Impl;

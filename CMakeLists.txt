@@ -76,32 +76,6 @@ set_target_properties(ocldbg_rt PROPERTIES
 )
 
 # -----------------------------------------------------------------------------
-# Core debugger library
-# -----------------------------------------------------------------------------
-add_library(ocldbg_core STATIC
-    ocldbg/DebuggerContext.cpp
-    ocldbg/dwarf/DWARFSourceModel.cpp
-    ocldbg/dwarf/LocationExprEval.cpp
-    ocldbg/ocl_debug_model/OCLVariableResolver.cpp
-    ocldbg/backends/cpu/PoclCPUBackend.cpp
-    ocldbg/backends/cpu/WIContextExtractor.cpp
-    ocldbg/backends/cpu/WorkGroupTracker.cpp
-    ocldbg/backends/cpu/x86_64/X86_64CPUABI.cpp
-    ocldbg/backends/oclgrind/OclgrindBackend.cpp
-    ocldbg/dap/DAPServer.cpp
-)
-target_include_directories(ocldbg_core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/ocldbg
-)
-target_link_libraries(ocldbg_core PUBLIC
-    Threads::Threads
-    ${LLVM_LIBS}
-    ${LLDB_LIB}
-    ${CMAKE_DL_LIBS}
-)
-
-# -----------------------------------------------------------------------------
 # Git commit hash for version reporting
 execute_process(
     COMMAND git rev-parse --short HEAD
@@ -113,6 +87,38 @@ execute_process(
 if (NOT OCLDBG_GIT_COMMIT)
     set(OCLDBG_GIT_COMMIT "unknown")
 endif()
+
+# -----------------------------------------------------------------------------
+# Core debugger library
+# -----------------------------------------------------------------------------
+add_library(ocldbg_core STATIC
+    ocldbg/DebuggerContext.cpp
+    ocldbg/args.cpp
+    ocldbg/cli.cpp
+    ocldbg/dwarf/DWARFSourceModel.cpp
+    ocldbg/dwarf/LocationExprEval.cpp
+    ocldbg/ocl_debug_model/OCLVariableResolver.cpp
+    ocldbg/backends/cpu/PoclCPUBackend.cpp
+    ocldbg/backends/cpu/WIContextExtractor.cpp
+    ocldbg/backends/cpu/WorkGroupTracker.cpp
+    ocldbg/backends/cpu/x86_64/X86_64CPUABI.cpp
+    ocldbg/backends/oclgrind/OclgrindBackend.cpp
+    ocldbg/dap/DAPServer.cpp
+)
+target_compile_definitions(ocldbg_core PRIVATE
+    OCLDBG_GIT_COMMIT="${OCLDBG_GIT_COMMIT}"
+    OCLDBG_VERSION="${PROJECT_VERSION}"
+)
+target_include_directories(ocldbg_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/ocldbg
+)
+target_link_libraries(ocldbg_core PUBLIC
+    Threads::Threads
+    ${LLVM_LIBS}
+    ${LLDB_LIB}
+    ${CMAKE_DL_LIBS}
+)
 
 add_executable(ocldbg
     ocldbg/main.cpp
