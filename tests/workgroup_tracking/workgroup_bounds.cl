@@ -3,6 +3,7 @@
 // RUN: %ocldbg --dry-run --show-wg-bounds %test_host_runner %s volume_acc | %FileCheck %s --check-prefix=CHECK-3D
 // RUN: %ocldbg --dry-run --track-wg %test_host_runner %s vec_add | %FileCheck %s --check-prefix=CHECK-TRACK-1D
 // RUN: %ocldbg --dry-run --track-wg %test_host_runner %s volume_acc | %FileCheck %s --check-prefix=CHECK-TRACK-3D
+// RUN: %ocldbg --dry-run --track-wg %test_host_runner %s reduce_sum | %FileCheck %s --check-prefix=CHECK-TRACK-REDUCE
 
 /**
  * workgroup_bounds.cl — Tests dynamic NDRange inference from kernel call sites
@@ -113,3 +114,11 @@ __kernel void volume_acc(__global const float *src,
 // CHECK-TRACK-3D-NEXT:   Dispatches: 32
 // CHECK-TRACK-3D-NEXT:   Expected:   32
 // CHECK-TRACK-3D: [ocldbg] Dry run completed successfully.
+
+// =============================================================================
+// Live Work-Group Dispatch Tracking for reduce_sum (global=16, local=4 -> 4 WGs)
+// =============================================================================
+// CHECK-TRACK-REDUCE: [ocldbg] Work-Group Dispatch Tracking:
+// CHECK-TRACK-REDUCE-NEXT:   Dispatches: 4
+// CHECK-TRACK-REDUCE-NEXT:   Expected:   4
+// CHECK-TRACK-REDUCE: [ocldbg] Dry run completed successfully.

@@ -1,6 +1,7 @@
 #pragma once
 #include "ocldbg/Types.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,7 @@ struct OCLWorkItem {
     /// Oclgrind: pointer to the Oclgrind WorkItem object
     /// AMD:      pointer to an AMDWaveLane struct
     ExecCtxHandle exec_ctx = nullptr;
+    std::shared_ptr<void> exec_ctx_storage = nullptr; ///< Optional lifetime manager for exec_ctx
 
     bool valid() const { return exec_ctx != nullptr; }
 

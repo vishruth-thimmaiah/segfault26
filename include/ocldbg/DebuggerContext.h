@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ocldbg/LocationBackend.h"
 #include "ocldbg/OCLWorkItem.h"
 #include "ocldbg/Types.h"
 
@@ -43,9 +44,16 @@ public:
 
     /// Resume the process and consume all _pocl_kernel_*_workgroup stop events,
     /// recording each stopped thread's work-group coordinates in WorkGroupTracker.
+    /// If inspect_vars is true, inspects variables at the first work-group dispatch.
     /// Returns the number of work-group dispatch events recorded.
     /// Stops when the process exits, crashes, or hits a non-WG breakpoint.
-    [[nodiscard]] size_t track_workgroup_dispatches();
+    [[nodiscard]] size_t track_workgroup_dispatches(bool inspect_vars = false);
+
+    /// Load DWARF information from the loaded kernel module, if available.
+    bool load_kernel_dwarf();
+
+    /// Inspect visible variables for a given work-item.
+    [[nodiscard]] std::vector<VarValue> inspect_variables(const OCLWorkItem &wi);
 
     /// Given a stopped host thread ID, resolve the active OCLWorkItem by combining
     /// the WorkGroupTracker (WG coordinates) with WIContextExtractor (local ID).

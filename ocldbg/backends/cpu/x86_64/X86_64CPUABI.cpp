@@ -166,7 +166,9 @@ bool X86_64CPUABI::read_local_id(lldb::SBFrame frame, const Size3 &local_size,
         return true;
     }
 
-    return false;
+    // 4. Fallback at workgroup entry point: initial local_id is (0,0,0)
+    out_local_id = {.x = 0, .y = 0, .z = 0};
+    return true;
 }
 
 std::unique_ptr<CPUABI> CPUABI::create_host_abi() {

@@ -1,5 +1,7 @@
 #include "WIContextExtractor.h"
 
+#include "CPUExecContext.h"
+
 namespace ocldbg {
 
 WIContextExtractor::WIContextExtractor() : abi_(CPUABI::create_host_abi()) {}
@@ -33,10 +35,13 @@ bool WIContextExtractor::extract_from_frame(lldb::SBFrame frame, const Size3 &wg
     out.global_id = {.x = (wg_id.x * lx) + local_id.x,
                      .y = (wg_id.y * ly) + local_id.y,
                      .z = (wg_id.z * lz) + local_id.z};
-    uint64_t tid = frame.GetThread().GetThreadID();
-    // NOLINTBEGIN(performance-no-int-to-ptr)
-    out.exec_ctx = reinterpret_cast<ExecCtxHandle>(static_cast<uintptr_t>(tid));
-    // NOLINTEND(performance-no-int-to-ptr)
+
+    auto ctx = std::make_shared<CPUExecContext>();
+    ctx->host_thread_id = frame.GetThread().GetThreadID();
+    ctx->frame = frame;
+    ctx->thread = frame.GetThread();
+    out.exec_ctx_storage = ctx;
+    out.exec_ctx = ctx.get();
     return true;
 }
 
@@ -62,9 +67,11 @@ bool WIContextExtractor::extract(uint64_t host_thread_id, const Size3 &wg_id,
     out.local_id = {.x = 0, .y = 0, .z = 0};
     out.group_id = wg_id;
     out.global_id = {.x = wg_id.x * lx, .y = wg_id.y * ly, .z = wg_id.z * lz};
-    // NOLINTBEGIN(performance-no-int-to-ptr)
-    out.exec_ctx = reinterpret_cast<ExecCtxHandle>(static_cast<uintptr_t>(host_thread_id));
-    // NOLINTEND(performance-no-int-to-ptr)
+
+    auto ctx = std::make_shared<CPUExecContext>();
+    ctx->host_thread_id = host_thread_id;
+    out.exec_ctx_storage = ctx;
+    out.exec_ctx = ctx.get();
     return true;
 }
 

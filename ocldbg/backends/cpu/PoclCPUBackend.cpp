@@ -3,6 +3,9 @@
 #include "WIContextExtractor.h"
 #include "WorkGroupTracker.h"
 
+#include <cstdio>
+#include <cstring>
+#include <lldb/API/SBValue.h>
 #include <stdexcept>
 
 // TODO (Person C): implement all methods below.
@@ -94,9 +97,112 @@ size_t PoclCPUBackend::read_global_memory(HostAddress /*addr*/, void * /*buf*/, 
     return 0;
 }
 
-VarValue CPULocationBackend::evaluate(const VarInfo & /*var*/, ExecCtxHandle /*exec_ctx*/) {
-    // TODO (Person C): use LLDB SBFrame / SBValue to evaluate DWARF location expression
-    return {};
+VarValue CPULocationBackend::evaluate(const VarInfo &var, ExecCtxHandle exec_ctx) {
+    if (!exec_ctx) {
+        return {};
+    }
+    auto *ctx = static_cast<const CPUExecContext *>(exec_ctx);
+    if (!ctx->frame.IsValid()) {
+        return {};
+    }
+
+    lldb::SBFrame frame = ctx->frame;
+    lldb::SBValue val;
+    if (!var.name.empty()) {
+        val = frame.FindVariable(var.name.c_str());
+    }
+
+    VarValue result;
+    result.name = var.name;
+    result.type_name = var.type_name;
+    result.address_space = var.address_space;
+
+    if (val.IsValid()) {
+        if (result.name.empty() && val.GetName()) {
+            result.name = val.GetName();
+        }
+        if (result.type_name.empty() && val.GetTypeName()) {
+            result.type_name = val.GetTypeName();
+        }
+
+        const char *val_str = val.GetValue();
+        if (val_str) {
+            result.value_str = val_str;
+            result.available = true;
+        } else {
+            const char *summary = val.GetSummary();
+            if (summary) {
+                result.value_str = summary;
+                result.available = true;
+            } else if (val.GetType().IsPointerType()) {
+                lldb::addr_t addr = val.GetValueAsUnsigned(0);
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "0x%lx", static_cast<unsigned long>(addr));
+                result.value_str = buf;
+                result.available = true;
+            }
+        }
+        return result;
+    }
+
+    // Fallback: evaluate DWARF location expression directly using registers
+    if (!var.dwarf_location_expr.empty()) {
+        const auto &expr = var.dwarf_location_expr;
+        uint8_t op = expr[0];
+        // DW_OP_reg0..DW_OP_reg31 (0x50 .. 0x6f)
+        if (op >= 0x50 && op <= 0x6f) {
+            uint8_t reg_idx = op - 0x50;
+            static const char *const x86_regs[] = {
+                "rax",  "rdx",  "rcx",  "rbx",   "rsi",   "rdi",   "rbp",   "rsp",
+                "r8",   "r9",   "r10",  "r11",   "r12",   "r13",   "r14",   "r15",
+                "rip",  "xmm0", "xmm1", "xmm2",  "xmm3",  "xmm4",  "xmm5",  "xmm6",
+                "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14"};
+            if (reg_idx < sizeof(x86_regs) / sizeof(x86_regs[0])) {
+                lldb::SBValue reg_val = frame.FindRegister(x86_regs[reg_idx]);
+                if (reg_val.IsValid()) {
+                    uint64_t reg_uval = reg_val.GetValueAsUnsigned(0);
+                    if (var.type_name.ends_with("*")) {
+                        char buf[32];
+                        std::snprintf(buf, sizeof(buf), "0x%lx",
+                                      static_cast<unsigned long>(reg_uval));
+                        result.value_str = buf;
+                        result.available = true;
+                    } else if (var.type_name == "int" || var.type_name == "signed int") {
+                        result.value_str = std::to_string(static_cast<int32_t>(reg_uval));
+                        result.available = true;
+                    } else if (var.type_name == "float") {
+                        float fval = 0.0f;
+                        std::memcpy(&fval, &reg_uval, sizeof(float));
+                        result.value_str = std::to_string(fval);
+                        result.available = true;
+                    } else {
+                        const char *r_str = reg_val.GetValue();
+                        if (r_str) {
+                            result.value_str = r_str;
+                            result.available = true;
+                        }
+                    }
+                }
+            }
+        } else if (op == 0x9e && expr.size() >= 2) { // DW_OP_implicit_value
+            size_t len = expr[1];
+            if (expr.size() >= 2 + len) {
+                if (var.type_name == "float" && len == sizeof(float)) {
+                    float fval = 0.0f;
+                    std::memcpy(&fval, &expr[2], sizeof(float));
+                    result.value_str = std::to_string(fval);
+                    result.available = true;
+                } else if (var.type_name == "int" && len == sizeof(int)) {
+                    int ival = 0;
+                    std::memcpy(&ival, &expr[2], sizeof(int));
+                    result.value_str = std::to_string(ival);
+                    result.available = true;
+                }
+            }
+        }
+    }
+
+    return result;
 }
 
 } // namespace ocldbg
