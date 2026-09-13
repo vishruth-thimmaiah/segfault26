@@ -109,6 +109,7 @@ void print_inferred_bounds(const ocldbg::KernelLaunchInfo &info) {
 
 } // namespace
 
+// NOLINTNEXTLINE(bugprone-exception-escape)
 int main(int argc, char **argv) {
     ProgramArgs args = parse_arguments(argc, argv);
 

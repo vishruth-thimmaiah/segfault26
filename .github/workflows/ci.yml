@@ -17,6 +17,9 @@ jobs:
 
       - name: Install dependencies
         run: |
+          sudo apt-get purge -y "*clang*18*" "*llvm*18*" "*lldb*18*"
+          sudo apt-get autoremove -y
+
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential \
@@ -45,6 +48,7 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_C_COMPILER=clang-22 \
             -DCMAKE_CXX_COMPILER=clang++-22 \
+            -DRUN_CLANG_TIDY_BIN=/usr/bin/run-clang-tidy-22 \
             -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm
 
       - name: Check code formatting
