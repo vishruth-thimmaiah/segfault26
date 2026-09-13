@@ -10,6 +10,7 @@
  * Options:
  *   --dry-run          [TEMP] Test launch and NDRange inference without full execution
  *   --show-wg-bounds   Display inferred work-group bounds and coordinate mapping
+ *   --track-wg         Track live work-group dispatches (implies kernel runs to completion)
  *   --backend <name>   Execution backend (default: cpu)
  *   --port <port>      Listen on TCP port for DAP client (default: stdio)
  */
@@ -31,6 +32,7 @@ struct ProgramArgs {
     uint16_t dap_port = 0;
     bool dry_run = false;
     bool show_wg_bounds = false;
+    bool track_wg = false;
     bool show_help = false;
     bool show_version = false;
 };
@@ -43,6 +45,8 @@ ProgramArgs parse_arguments(int argc, char **argv) {
             args.dry_run = true;
         } else if (arg == "--show-wg-bounds") {
             args.show_wg_bounds = true;
+        } else if (arg == "--track-wg") {
+            args.track_wg = true;
         } else if (arg == "--backend" && (i + 1 < argc)) {
             args.backend_name = argv[++i];
         } else if (arg == "--port" && (i + 1 < argc)) {
@@ -81,6 +85,8 @@ void print_help() {
         "Options:\n"
         "  --dry-run          [TEMP] Test launch and NDRange inference without full execution\n"
         "  --show-wg-bounds   Display inferred work-group bounds and coordinate mapping\n"
+        "  --track-wg         Track live work-group dispatches (implies kernel runs to "
+        "completion)\n"
         "  --backend <name>   Execution backend (default: cpu)\n"
         "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n"
         "  -v, --version      Display version and build information\n"
@@ -105,6 +111,37 @@ void print_inferred_bounds(const ocldbg::KernelLaunchInfo &info) {
         std::cout << std::format("  WI {} -> WG {} Local {}\n", wi.global_id, wi.group_id,
                                  wi.local_id);
     }
+}
+
+void print_tracking_summary(size_t dispatches, size_t expected) {
+    std::cout << std::format("[ocldbg] Work-Group Dispatch Tracking:\n"
+                             "  Dispatches: {}\n"
+                             "  Expected:   {}\n",
+                             dispatches, expected);
+}
+
+void handle_workgroup_tracking(ocldbg::DebuggerContext &dbg, const ProgramArgs &args,
+                               const ocldbg::KernelLaunchInfo &launch_info) {
+    // Infer kernel name from the last host arg if it doesn't look like a file path.
+    // host_runner.c convention: argv[1]=<cl_file> argv[2]=<kernel_name>
+    std::string kernel_name;
+    if (!args.host_args.empty()) {
+        const std::string &last = args.host_args.back();
+        if (last.size() < 3 || last.substr(last.size() - 3) != ".cl") {
+            kernel_name = last;
+        }
+    }
+
+    if (kernel_name.empty()) {
+        std::cerr << "[ocldbg] Warning: --track-wg requires kernel name as last host arg\n";
+        return;
+    }
+
+    dbg.set_workgroup_breakpoint(kernel_name);
+    size_t dispatches = dbg.track_workgroup_dispatches();
+    size_t expected =
+        launch_info.num_groups.x * launch_info.num_groups.y * launch_info.num_groups.z;
+    print_tracking_summary(dispatches, expected);
 }
 
 } // namespace
@@ -141,14 +178,22 @@ int main(int argc, char **argv) {
         if (args.show_wg_bounds && launch_info.has_value()) {
             print_inferred_bounds(*launch_info);
         }
+
+        if (args.track_wg && launch_info.has_value()) {
+            handle_workgroup_tracking(dbg, args, *launch_info);
+        }
     } else {
         std::cerr << "[ocldbg] Warning: Could not infer NDRange from kernel call site\n";
     }
 
     // NOTE: --dry-run is a temporary test/validation flag used during milestone verification.
+    // When --track-wg is active, the process already ran to completion in
+    // track_workgroup_dispatches.
     if (args.dry_run) {
         std::cout << "[ocldbg] Dry run completed successfully.\n";
-        dbg.terminate_process();
+        if (!args.track_wg) {
+            dbg.terminate_process();
+        }
         ocldbg::DebuggerContext::terminate();
         return 0;
     }
