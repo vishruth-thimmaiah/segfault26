@@ -82,7 +82,8 @@ std::vector<HostAddress> DWARFSourceModel::source_to_pcs(const SourceLocation &l
             if (lt->getFileNameByIndex(row.File, cu->getCompilationDir(),
                                        DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath,
                                        file_path)) {
-                if (file_path == loc.file || file_path.ends_with(loc.file)) {
+                if (loc.file.empty() || file_path.ends_with(loc.file) ||
+                    (loc.file.ends_with(".cl") && file_path.ends_with(".cl"))) {
                     pcs.push_back(row.Address.Address);
                 }
             }

@@ -42,15 +42,19 @@ public:
     /// kernel .so is already loaded), false otherwise (will resolve lazily on first run).
     bool set_workgroup_breakpoint(const std::string &kernel_name);
 
-    /// Resume the process and consume all _pocl_kernel_*_workgroup stop events,
-    /// recording each stopped thread's work-group coordinates in WorkGroupTracker.
+    /// Resume the process and consume stop events.
     /// If inspect_vars is true, inspects variables at the first work-group dispatch.
-    /// Returns the number of work-group dispatch events recorded.
+    /// If break_at > 0, breaks at the specified kernel source line up to break_for times (or
+    /// indefinitely if break_for == 0). Returns the number of work-group dispatch events recorded.
     /// Stops when the process exits, crashes, or hits a non-WG breakpoint.
-    [[nodiscard]] size_t track_workgroup_dispatches(bool inspect_vars = false);
+    [[nodiscard]] size_t track_workgroup_dispatches(bool inspect_vars = false,
+                                                    unsigned break_at = 0, size_t break_for = 0);
 
     /// Load DWARF information from the loaded kernel module, if available.
     bool load_kernel_dwarf();
+
+    /// Set a source-line breakpoint in the loaded kernel module.
+    bool set_source_breakpoint(unsigned line);
 
     /// Inspect visible variables for a given work-item.
     [[nodiscard]] std::vector<VarValue> inspect_variables(const OCLWorkItem &wi);

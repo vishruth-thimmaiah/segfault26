@@ -29,6 +29,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace ocldbg {
@@ -199,6 +200,65 @@ void print_inspected_variables(const OCLWorkItem &wi, const std::vector<VarValue
     }
 }
 
+std::optional<uint64_t> find_line_breakpoint_thread(lldb::SBProcess &process,
+                                                    lldb::break_id_t bp_id) {
+    uint32_t nthreads = process.GetNumThreads();
+    for (uint32_t i = 0; i < nthreads; ++i) {
+        lldb::SBThread t = process.GetThreadAtIndex(i);
+        if (t.IsValid() && t.GetStopReason() == lldb::eStopReasonBreakpoint) {
+            uint64_t hit_id = t.GetStopReasonDataAtIndex(0);
+            if (std::cmp_equal(hit_id, bp_id)) {
+                return t.GetThreadID();
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+void print_breakpoint_hit(unsigned line, const std::optional<OCLWorkItem> &wi, size_t hit_count,
+                          const std::vector<VarValue> &vars) {
+    std::string wi_str = wi ? wi->str() : "WI(?)";
+    std::cout << std::format("[ocldbg] Breakpoint hit at line {} for {} (hit {}):\n", line, wi_str,
+                             hit_count);
+    for (const auto &v : vars) {
+        std::string addr_sp = v.address_space.empty() ? "" : " " + v.address_space;
+        std::cout << std::format("  {} ({}{}) = {}\n", v.name, v.type_name, addr_sp,
+                                 v.available ? v.value_str : "<unavailable>");
+    }
+}
+
+bool handle_line_breakpoint(DebuggerContext &dbg, lldb::SBProcess &process, lldb::SBTarget &target,
+                            lldb::SBBreakpoint &line_bp, unsigned break_at, size_t break_for,
+                            size_t &line_hit_count) {
+    if (!line_bp.IsValid()) {
+        return false;
+    }
+    auto hit_tid = find_line_breakpoint_thread(process, line_bp.GetID());
+    if (!hit_tid.has_value()) {
+        return false;
+    }
+    ++line_hit_count;
+    auto wi = dbg.resolve_stopped_work_item(*hit_tid);
+    std::vector<VarValue> vars = wi ? dbg.inspect_variables(*wi) : std::vector<VarValue>{};
+    print_breakpoint_hit(break_at, wi, line_hit_count, vars);
+
+    if (break_for > 0 && line_hit_count >= break_for) {
+        target.BreakpointDelete(line_bp.GetID());
+        line_bp = lldb::SBBreakpoint();
+    }
+    return true;
+}
+
+void handle_first_dispatch_inspection(DebuggerContext &dbg, lldb::SBProcess &process,
+                                      uint64_t hit_thread_id, bool &inspected) {
+    step_into_kernel(process, hit_thread_id);
+    auto wi = dbg.resolve_stopped_work_item(hit_thread_id);
+    if (wi) {
+        print_inspected_variables(*wi, dbg.inspect_variables(*wi));
+    }
+    inspected = true;
+}
+
 } // namespace
 
 struct DebuggerContext::Impl {
@@ -206,6 +266,7 @@ struct DebuggerContext::Impl {
     lldb::SBTarget target;
     lldb::SBProcess process;
     lldb::SBBreakpoint wg_breakpoint;
+    lldb::SBBreakpoint line_breakpoint;
     std::optional<KernelLaunchInfo> launch_info;
     std::string kernel_name;
     WorkGroupTracker wg_tracker;
@@ -326,12 +387,11 @@ bool DebuggerContext::set_workgroup_breakpoint(const std::string &kernel_name) {
     return impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0;
 }
 
-size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars) {
+size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars, unsigned break_at,
+                                                   size_t break_for) {
     if (!impl_->process.IsValid() || !impl_->abi) {
         return 0;
     }
-
-    // Ensure work-group breakpoint is set.
     if (!impl_->wg_breakpoint.IsValid() || impl_->wg_breakpoint.GetNumLocations() == 0) {
         if (!set_workgroup_breakpoint(impl_->kernel_name)) {
             return 0;
@@ -342,6 +402,7 @@ size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars) {
 
     size_t dispatch_count = 0;
     bool inspected = false;
+    size_t line_hit_count = 0;
 
     while (true) {
         impl_->process.Continue();
@@ -354,27 +415,70 @@ size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars) {
             continue;
         }
 
+        if (handle_line_breakpoint(*this, impl_->process, impl_->target, impl_->line_breakpoint,
+                                   break_at, break_for, line_hit_count)) {
+            continue;
+        }
+
         uint64_t hit_thread_id = 0;
         if (!record_stopped_workgroups(impl_->process, impl_->abi.get(), impl_->wg_tracker,
                                        dispatch_count, hit_thread_id)) {
             break;
         }
 
+        if (break_at > 0 && !impl_->line_breakpoint.IsValid() &&
+            (break_for == 0 || line_hit_count < break_for)) {
+            set_source_breakpoint(break_at);
+        }
+
         if (inspect_vars && !inspected && hit_thread_id != 0) {
-            step_into_kernel(impl_->process, hit_thread_id);
-            auto wi = resolve_stopped_work_item(hit_thread_id);
-            if (wi) {
-                print_inspected_variables(*wi, inspect_variables(*wi));
-            }
-            inspected = true;
+            handle_first_dispatch_inspection(*this, impl_->process, hit_thread_id, inspected);
         }
     }
 
+    if (impl_->line_breakpoint.IsValid()) {
+        impl_->target.BreakpointDelete(impl_->line_breakpoint.GetID());
+    }
     if (impl_->wg_breakpoint.IsValid()) {
         impl_->target.BreakpointDelete(impl_->wg_breakpoint.GetID());
     }
 
     return dispatch_count;
+}
+
+bool DebuggerContext::set_source_breakpoint(unsigned line) {
+    load_kernel_dwarf();
+    if (!impl_->dwarf_model.loaded()) {
+        return false;
+    }
+    std::vector<HostAddress> pcs =
+        impl_->dwarf_model.source_to_pcs(SourceLocation{.file = "", .line = line});
+    if (pcs.empty()) {
+        return false;
+    }
+
+    lldb::SBModule kernel_mod;
+    for (uint32_t i = 0; i < impl_->target.GetNumModules(); ++i) {
+        lldb::SBModule m = impl_->target.GetModuleAtIndex(i);
+        const char *fn = m.GetFileSpec().GetFilename();
+        if (fn != nullptr &&
+            std::string_view(fn).find(impl_->kernel_name) != std::string_view::npos) {
+            kernel_mod = m;
+            break;
+        }
+    }
+
+    if (!kernel_mod.IsValid()) {
+        return false;
+    }
+
+    lldb::SBAddress sb_addr = kernel_mod.ResolveFileAddress(pcs[0]);
+    lldb::addr_t load_addr = sb_addr.GetLoadAddress(impl_->target);
+    if (load_addr != LLDB_INVALID_ADDRESS) {
+        impl_->line_breakpoint = impl_->target.BreakpointCreateByAddress(load_addr);
+        return impl_->line_breakpoint.IsValid() && impl_->line_breakpoint.GetNumLocations() > 0;
+    }
+    return false;
 }
 
 bool DebuggerContext::load_kernel_dwarf() {
