@@ -150,7 +150,7 @@ std::optional<lldb::addr_t> find_pocl_dispatch_address(lldb::SBTarget &target) {
 }
 
 bool record_stopped_workgroups(lldb::SBProcess &process, CPUABI *abi, WorkGroupTracker &tracker,
-                               size_t &dispatch_count) {
+                               size_t &dispatch_count, uint64_t &first_hit_thread_id) {
     bool any_wg_hit = false;
     uint32_t num_threads = process.GetNumThreads();
     for (uint32_t i = 0; i < num_threads; ++i) {
@@ -167,11 +167,36 @@ bool record_stopped_workgroups(lldb::SBProcess &process, CPUABI *abi, WorkGroupT
         Size3 wg_id;
         if (abi->read_workgroup_id(f, wg_id)) {
             tracker.record_wg(t.GetThreadID(), wg_id);
+            if (first_hit_thread_id == 0) {
+                first_hit_thread_id = t.GetThreadID();
+            }
             ++dispatch_count;
             any_wg_hit = true;
         }
     }
     return any_wg_hit;
+}
+
+void step_into_kernel(lldb::SBProcess &process, uint64_t hit_thread_id) {
+    uint32_t nthreads = process.GetNumThreads();
+    for (uint32_t i = 0; i < nthreads; ++i) {
+        lldb::SBThread t = process.GetThreadAtIndex(i);
+        if (t.IsValid() && t.GetThreadID() == hit_thread_id) {
+            t.StepInto();
+            // Step past workgroup wrapper prologue into the inlined kernel body
+            t.StepInto();
+            break;
+        }
+    }
+}
+
+void print_inspected_variables(const OCLWorkItem &wi, const std::vector<VarValue> &vars) {
+    std::cout << std::format("[ocldbg] Inspecting variables for stopped {}:\n", wi.str());
+    for (const auto &v : vars) {
+        std::string addr_sp = v.address_space.empty() ? "" : " " + v.address_space;
+        std::cout << std::format("  {} ({}{}) = {}\n", v.name, v.type_name, addr_sp,
+                                 v.available ? v.value_str : "<unavailable>");
+    }
 }
 
 } // namespace
@@ -185,6 +210,7 @@ struct DebuggerContext::Impl {
     std::string kernel_name;
     WorkGroupTracker wg_tracker;
     std::unique_ptr<CPUABI> abi{CPUABI::create_host_abi()};
+    DWARFSourceModel dwarf_model;
 };
 
 std::string DebuggerContext::init() {
@@ -300,7 +326,7 @@ bool DebuggerContext::set_workgroup_breakpoint(const std::string &kernel_name) {
     return impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0;
 }
 
-size_t DebuggerContext::track_workgroup_dispatches() {
+size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars) {
     if (!impl_->process.IsValid() || !impl_->abi) {
         return 0;
     }
@@ -315,6 +341,8 @@ size_t DebuggerContext::track_workgroup_dispatches() {
     impl_->wg_tracker.clear();
 
     size_t dispatch_count = 0;
+    bool inspected = false;
+
     while (true) {
         impl_->process.Continue();
 
@@ -326,9 +354,19 @@ size_t DebuggerContext::track_workgroup_dispatches() {
             continue;
         }
 
+        uint64_t hit_thread_id = 0;
         if (!record_stopped_workgroups(impl_->process, impl_->abi.get(), impl_->wg_tracker,
-                                       dispatch_count)) {
+                                       dispatch_count, hit_thread_id)) {
             break;
+        }
+
+        if (inspect_vars && !inspected && hit_thread_id != 0) {
+            step_into_kernel(impl_->process, hit_thread_id);
+            auto wi = resolve_stopped_work_item(hit_thread_id);
+            if (wi) {
+                print_inspected_variables(*wi, inspect_variables(*wi));
+            }
+            inspected = true;
         }
     }
 
@@ -337,6 +375,35 @@ size_t DebuggerContext::track_workgroup_dispatches() {
     }
 
     return dispatch_count;
+}
+
+bool DebuggerContext::load_kernel_dwarf() {
+    if (impl_->dwarf_model.loaded()) {
+        return true;
+    }
+    uint32_t num_mods = impl_->target.GetNumModules();
+    for (uint32_t i = 0; i < num_mods; ++i) {
+        lldb::SBModule m = impl_->target.GetModuleAtIndex(i);
+        const char *fn = m.GetFileSpec().GetFilename();
+        if (fn != nullptr) {
+            std::string_view fn_sv(fn);
+            if (fn_sv.find(impl_->kernel_name) != std::string_view::npos) {
+                std::array<char, 1024> path{};
+                if (m.GetFileSpec().GetPath(path.data(), path.size()) > 0) {
+                    bool loaded = impl_->dwarf_model.load(path.data());
+                    return loaded;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+std::vector<VarValue> DebuggerContext::inspect_variables(const OCLWorkItem &wi) {
+    load_kernel_dwarf();
+    PoclCPUBackend backend;
+    OCLVariableResolver resolver(impl_->dwarf_model);
+    return resolver.resolve(wi, backend);
 }
 
 std::optional<OCLWorkItem> DebuggerContext::resolve_stopped_work_item(uint64_t thread_id) const {

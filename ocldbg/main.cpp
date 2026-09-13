@@ -33,6 +33,7 @@ struct ProgramArgs {
     bool dry_run = false;
     bool show_wg_bounds = false;
     bool track_wg = false;
+    bool inspect_vars = false;
     bool show_help = false;
     bool show_version = false;
 };
@@ -47,6 +48,8 @@ ProgramArgs parse_arguments(int argc, char **argv) {
             args.show_wg_bounds = true;
         } else if (arg == "--track-wg") {
             args.track_wg = true;
+        } else if (arg == "--inspect-vars") {
+            args.inspect_vars = true;
         } else if (arg == "--backend" && (i + 1 < argc)) {
             args.backend_name = argv[++i];
         } else if (arg == "--port" && (i + 1 < argc)) {
@@ -87,6 +90,7 @@ void print_help() {
         "  --show-wg-bounds   Display inferred work-group bounds and coordinate mapping\n"
         "  --track-wg         Track live work-group dispatches (implies kernel runs to "
         "completion)\n"
+        "  --inspect-vars     Inspect variables at first work-group stop\n"
         "  --backend <name>   Execution backend (default: cpu)\n"
         "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n"
         "  -v, --version      Display version and build information\n"
@@ -138,7 +142,7 @@ void handle_workgroup_tracking(ocldbg::DebuggerContext &dbg, const ProgramArgs &
     }
 
     dbg.set_workgroup_breakpoint(kernel_name);
-    size_t dispatches = dbg.track_workgroup_dispatches();
+    size_t dispatches = dbg.track_workgroup_dispatches(args.inspect_vars);
     size_t expected =
         launch_info.num_groups.x * launch_info.num_groups.y * launch_info.num_groups.z;
     print_tracking_summary(dispatches, expected);

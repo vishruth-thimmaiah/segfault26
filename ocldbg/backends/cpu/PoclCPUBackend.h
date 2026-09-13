@@ -1,4 +1,5 @@
 #pragma once
+#include "CPUExecContext.h"
 #include "CPULocationBackend.h"
 #include "ocldbg/Backend.h"
 
@@ -10,13 +11,6 @@ namespace ocldbg {
 
 class WorkGroupTracker;
 class WIContextExtractor;
-
-/// Execution context for a stopped pocl CPU work-item.
-/// The ExecCtxHandle in OCLWorkItem points to one of these.
-struct CPUExecContext {
-    uint64_t host_thread_id; ///< OS thread ID of the pocl worker thread
-    // TODO (Person C): add LLDB SBThread / SBFrame wrapper here
-};
 
 /// Backend implementation for pocl's CPU device.
 ///

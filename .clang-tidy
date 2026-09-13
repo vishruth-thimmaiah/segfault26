@@ -11,6 +11,7 @@ Checks: >
   -bugprone-easily-swappable-parameters,
   -bugprone-reserved-identifier,
   -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -misc-header-include-cycle,
   -misc-include-cleaner,
   -misc-use-anonymous-namespace,
   -misc-const-correctness,
