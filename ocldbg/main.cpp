@@ -34,6 +34,8 @@ struct ProgramArgs {
     bool show_wg_bounds = false;
     bool track_wg = false;
     bool inspect_vars = false;
+    unsigned break_at = 0;
+    size_t break_for = 0;
     bool show_help = false;
     bool show_version = false;
 };
@@ -50,6 +52,10 @@ ProgramArgs parse_arguments(int argc, char **argv) {
             args.track_wg = true;
         } else if (arg == "--inspect-vars") {
             args.inspect_vars = true;
+        } else if (arg == "--break-at" && (i + 1 < argc)) {
+            args.break_at = static_cast<unsigned>(std::stoul(argv[++i]));
+        } else if (arg == "--break-for" && (i + 1 < argc)) {
+            args.break_for = static_cast<size_t>(std::stoull(argv[++i]));
         } else if (arg == "--backend" && (i + 1 < argc)) {
             args.backend_name = argv[++i];
         } else if (arg == "--port" && (i + 1 < argc)) {
@@ -91,6 +97,8 @@ void print_help() {
         "  --track-wg         Track live work-group dispatches (implies kernel runs to "
         "completion)\n"
         "  --inspect-vars     Inspect variables at first work-group stop\n"
+        "  --break-at <line>  Break at kernel source line (e.g. --break-at 17)\n"
+        "  --break-for <x>    Stop at breakpoint x times (default: every time)\n"
         "  --backend <name>   Execution backend (default: cpu)\n"
         "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n"
         "  -v, --version      Display version and build information\n"
@@ -137,15 +145,18 @@ void handle_workgroup_tracking(ocldbg::DebuggerContext &dbg, const ProgramArgs &
     }
 
     if (kernel_name.empty()) {
-        std::cerr << "[ocldbg] Warning: --track-wg requires kernel name as last host arg\n";
+        std::cerr << "[ocldbg] Warning: Kernel name required as last host arg\n";
         return;
     }
 
     dbg.set_workgroup_breakpoint(kernel_name);
-    size_t dispatches = dbg.track_workgroup_dispatches(args.inspect_vars);
-    size_t expected =
-        launch_info.num_groups.x * launch_info.num_groups.y * launch_info.num_groups.z;
-    print_tracking_summary(dispatches, expected);
+    size_t dispatches =
+        dbg.track_workgroup_dispatches(args.inspect_vars, args.break_at, args.break_for);
+    if (args.track_wg) {
+        size_t expected =
+            launch_info.num_groups.x * launch_info.num_groups.y * launch_info.num_groups.z;
+        print_tracking_summary(dispatches, expected);
+    }
 }
 
 } // namespace
@@ -183,7 +194,7 @@ int main(int argc, char **argv) {
             print_inferred_bounds(*launch_info);
         }
 
-        if (args.track_wg && launch_info.has_value()) {
+        if ((args.track_wg || args.break_at > 0) && launch_info.has_value()) {
             handle_workgroup_tracking(dbg, args, *launch_info);
         }
     } else {
@@ -191,11 +202,11 @@ int main(int argc, char **argv) {
     }
 
     // NOTE: --dry-run is a temporary test/validation flag used during milestone verification.
-    // When --track-wg is active, the process already ran to completion in
+    // When --track-wg or --break-at is active, the process already ran to completion in
     // track_workgroup_dispatches.
     if (args.dry_run) {
         std::cout << "[ocldbg] Dry run completed successfully.\n";
-        if (!args.track_wg) {
+        if (!args.track_wg && args.break_at == 0) {
             dbg.terminate_process();
         }
         ocldbg::DebuggerContext::terminate();
