@@ -1,5 +1,6 @@
 #include "ocldbg/DebuggerContext.h"
 
+#include "DebuggerContextImpl.h"
 #include "backends/cpu/CPUABI.h"
 #include "backends/cpu/PoclCPUBackend.h"
 #include "backends/cpu/WIContextExtractor.h"
@@ -260,19 +261,6 @@ void handle_first_dispatch_inspection(DebuggerContext &dbg, lldb::SBProcess &pro
 }
 
 } // namespace
-
-struct DebuggerContext::Impl {
-    lldb::SBDebugger debugger;
-    lldb::SBTarget target;
-    lldb::SBProcess process;
-    lldb::SBBreakpoint wg_breakpoint;
-    lldb::SBBreakpoint line_breakpoint;
-    std::optional<KernelLaunchInfo> launch_info;
-    std::string kernel_name;
-    WorkGroupTracker wg_tracker;
-    std::unique_ptr<CPUABI> abi{CPUABI::create_host_abi()};
-    DWARFSourceModel dwarf_model;
-};
 
 std::string DebuggerContext::init() {
     lldb::SBDebugger::Initialize();
