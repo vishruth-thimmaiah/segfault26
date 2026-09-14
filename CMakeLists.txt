@@ -76,6 +76,50 @@ set_target_properties(ocldbg_rt PROPERTIES
 )
 
 # -----------------------------------------------------------------------------
+# Oclgrind simulator backend (optional)
+#
+# Only the injected plugin needs Oclgrind; the backend itself always builds.
+# Set OCLGRIND_ROOT for a non-standard install prefix.
+# -----------------------------------------------------------------------------
+set(OCLGRIND_ROOT "" CACHE PATH "Root of the Oclgrind installation")
+
+find_path(OCLGRIND_INCLUDE_DIR "oclgrind/Plugin.h"
+    HINTS ${OCLGRIND_ROOT} ENV OCLGRIND_ROOT
+    PATH_SUFFIXES include
+)
+find_library(OCLGRIND_LIB NAMES oclgrind
+    HINTS ${OCLGRIND_ROOT} ENV OCLGRIND_ROOT
+    PATH_SUFFIXES lib
+)
+
+if (OCLGRIND_INCLUDE_DIR AND OCLGRIND_LIB)
+    message(STATUS "Found Oclgrind library: ${OCLGRIND_LIB}")
+    get_filename_component(OCLGRIND_LIB_DIR "${OCLGRIND_LIB}" DIRECTORY)
+
+    add_library(ocldbg_oclgrind_plugin SHARED
+        ocldbg/backends/oclgrind/plugin/DebugPlugin.cpp
+    )
+    target_include_directories(ocldbg_oclgrind_plugin PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/ocldbg
+        ${OCLGRIND_INCLUDE_DIR}
+    )
+    # Oclgrind inherits -fno-rtti from LLVM, so oclgrind::Plugin has no typeinfo
+    # symbol. Compiling with RTTI here would leave our vtable referencing one.
+    target_compile_options(ocldbg_oclgrind_plugin PRIVATE -fno-rtti)
+    target_link_libraries(ocldbg_oclgrind_plugin PRIVATE
+        ${OCLGRIND_LIB}
+        ${LLVM_LIBS}
+    )
+    # Not $<TARGET_FILE:...>: configure_file() cannot expand generator expressions.
+    set(OCLDBG_OCLGRIND_PLUGIN_PATH
+        "${CMAKE_BINARY_DIR}/${CMAKE_SHARED_LIBRARY_PREFIX}ocldbg_oclgrind_plugin${CMAKE_SHARED_LIBRARY_SUFFIX}")
+else()
+    message(STATUS "Oclgrind not found; the Oclgrind backend will refuse to launch.")
+    set(OCLGRIND_LIB_DIR "")
+    set(OCLDBG_OCLGRIND_PLUGIN_PATH "")
+endif()
+
+# -----------------------------------------------------------------------------
 # Git commit hash for version reporting
 execute_process(
     COMMAND git rev-parse --short HEAD
@@ -103,11 +147,14 @@ add_library(ocldbg_core STATIC
     ocldbg/backends/cpu/WorkGroupTracker.cpp
     ocldbg/backends/cpu/x86_64/X86_64CPUABI.cpp
     ocldbg/backends/oclgrind/OclgrindBackend.cpp
+    ocldbg/backends/oclgrind/OclgrindSession.cpp
     ocldbg/dap/DAPServer.cpp
 )
 target_compile_definitions(ocldbg_core PRIVATE
     OCLDBG_GIT_COMMIT="${OCLDBG_GIT_COMMIT}"
     OCLDBG_VERSION="${PROJECT_VERSION}"
+    OCLDBG_OCLGRIND_PLUGIN_PATH="${OCLDBG_OCLGRIND_PLUGIN_PATH}"
+    OCLDBG_OCLGRIND_LIB_DIR="${OCLGRIND_LIB_DIR}"
 )
 target_include_directories(ocldbg_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include

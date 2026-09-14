@@ -6,6 +6,7 @@
  */
 
 #include "args.h"
+#include "backends/oclgrind/OclgrindSession.h"
 #include "ocldbg/DebuggerContext.h"
 #include "ocldbg/Types.h"
 
@@ -70,6 +71,52 @@ void handle_workgroup_tracking(ocldbg::DebuggerContext &dbg, const ocldbg::Progr
     }
 }
 
+int run_dry_run(const ocldbg::ProgramArgs &args) {
+    if (args.host_binary.empty()) {
+        std::cerr << "Usage: ocldbg --dry-run [options] <host_binary> [args...]\n";
+        return 1;
+    }
+
+    // Oclgrind interprets the kernel inside the host program, so it needs none
+    // of the LLDB launch and NDRange inference the CPU backend depends on.
+    if (args.backend_name == "oclgrind") {
+        return ocldbg::run_oclgrind_session(ocldbg::OclgrindSessionConfig{
+            .host_binary = args.host_binary,
+            .host_args = args.host_args,
+            .break_at = args.break_at,
+            .break_for = args.break_for,
+            .print_exprs = args.print_exprs,
+        });
+    }
+
+    ocldbg::DebuggerContext::init();
+    ocldbg::DebuggerContext dbg;
+    if (!dbg.launch(args.host_binary, args.host_args)) {
+        ocldbg::DebuggerContext::terminate();
+        return 1;
+    }
+
+    if (dbg.infer_kernel_launch()) {
+        const auto &launch_info = dbg.kernel_launch_info();
+        if (args.show_wg_bounds && launch_info.has_value()) {
+            print_inferred_bounds(*launch_info);
+        }
+
+        if ((args.track_wg || args.break_at > 0) && launch_info.has_value()) {
+            handle_workgroup_tracking(dbg, args, *launch_info);
+        }
+    } else {
+        std::cerr << "[ocldbg] Warning: Could not infer NDRange from kernel call site\n";
+    }
+
+    std::cout << "[ocldbg] Dry run completed successfully.\n";
+    if (!args.track_wg && args.break_at == 0) {
+        dbg.terminate_process();
+    }
+    ocldbg::DebuggerContext::terminate();
+    return 0;
+}
+
 } // namespace
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
@@ -95,37 +142,7 @@ int main(int argc, char **argv) {
 
     // Dry-run milestone verification pipeline
     if (args.dry_run) {
-        if (args.host_binary.empty()) {
-            std::cerr << "Usage: ocldbg --dry-run [options] <host_binary> [args...]\n";
-            return 1;
-        }
-
-        ocldbg::DebuggerContext::init();
-        ocldbg::DebuggerContext dbg;
-        if (!dbg.launch(args.host_binary, args.host_args)) {
-            ocldbg::DebuggerContext::terminate();
-            return 1;
-        }
-
-        if (dbg.infer_kernel_launch()) {
-            const auto &launch_info = dbg.kernel_launch_info();
-            if (args.show_wg_bounds && launch_info.has_value()) {
-                print_inferred_bounds(*launch_info);
-            }
-
-            if ((args.track_wg || args.break_at > 0) && launch_info.has_value()) {
-                handle_workgroup_tracking(dbg, args, *launch_info);
-            }
-        } else {
-            std::cerr << "[ocldbg] Warning: Could not infer NDRange from kernel call site\n";
-        }
-
-        std::cout << "[ocldbg] Dry run completed successfully.\n";
-        if (!args.track_wg && args.break_at == 0) {
-            dbg.terminate_process();
-        }
-        ocldbg::DebuggerContext::terminate();
-        return 0;
+        return run_dry_run(args);
     }
 
     // DAP server session
