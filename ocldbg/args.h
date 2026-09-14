@@ -17,6 +17,7 @@ struct ProgramArgs {
     bool inspect_vars = false;
     unsigned break_at = 0;
     size_t break_for = 0;
+    std::vector<std::string> print_exprs;
     bool show_help = false;
     bool show_version = false;
 
@@ -28,7 +29,8 @@ struct ProgramArgs {
     bool batch_mode = false;                  // -b, --batch
 
     [[nodiscard]] bool has_ocldbg_specific_args() const {
-        return show_wg_bounds || track_wg || inspect_vars || break_at > 0 || break_for > 0;
+        return show_wg_bounds || track_wg || inspect_vars || break_at > 0 || break_for > 0 ||
+               !print_exprs.empty();
     }
 };
 

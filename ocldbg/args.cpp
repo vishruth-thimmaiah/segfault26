@@ -35,6 +35,7 @@ bool parse_flag_opts(ProgramArgs &args, std::string_view arg, int &i, int argc, 
         parse_vector_opt(arg, "-S", "--source-before-file", i, argc, argv, args.source_before) ||
         parse_vector_opt(arg, "-s", "--source", i, argc, argv, args.source_after) ||
         parse_vector_opt(arg, "-o", "--one-line", i, argc, argv, args.one_line_after) ||
+        parse_vector_opt(arg, "", "--print", i, argc, argv, args.print_exprs) ||
         parse_string_opt(arg, "", "--backend", i, argc, argv, args.backend_name)) {
         return true;
     }
@@ -150,6 +151,7 @@ void print_help() {
         "  --inspect-vars     Inspect variables at first work-group stop\n"
         "  --break-at <line>  Break at kernel source line (e.g. --break-at 17)\n"
         "  --break-for <x>    Stop at breakpoint x times (default: every time)\n"
+        "  --print <expr>     Evaluate expression at each stop (oclgrind backend; repeatable)\n"
         "  --backend <name>   Execution backend (default: cpu)\n"
         "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n"
         "  -v, --version      Display version and build information\n"

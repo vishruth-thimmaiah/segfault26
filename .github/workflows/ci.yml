@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  # Pinned so CI stays reproducible. The plugin shares Oclgrind's C++ ABI, so
+  # this must be built against the same LLVM as ocldbg itself.
+  OCLGRIND_COMMIT: 5597a379b4f7d74c4af5532260df0366c277259f
+
 jobs:
   lint:
     name: Formatting & Clang-Tidy (Ubuntu)
@@ -40,6 +45,29 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 100
           sudo update-alternatives --install /usr/bin/lldb lldb /usr/bin/lldb-22 100
           sudo apt-get install -y --no-install-recommends liblldb-22-dev liblldb-22 || true
+          sudo apt-get install -y --no-install-recommends libclang-22-dev libpolly-22-dev
+
+      - name: Cache Oclgrind
+        id: oclgrind-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/oclgrind
+          key: oclgrind-${{ env.OCLGRIND_COMMIT }}-llvm22-${{ runner.os }}
+
+      - name: Build Oclgrind
+        if: steps.oclgrind-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/jrprice/Oclgrind.git oclgrind-src
+          git -C oclgrind-src checkout ${OCLGRIND_COMMIT}
+          cmake -S oclgrind-src -B oclgrind-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$HOME/.local/oclgrind \
+            -DCMAKE_C_COMPILER=clang-22 \
+            -DCMAKE_CXX_COMPILER=clang++-22 \
+            -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm \
+            -DCLANG_ROOT=/usr/lib/llvm-22
+          cmake --build oclgrind-build -- -j$(nproc)
+          cmake --install oclgrind-build
 
       - name: Configure CMake
         run: |
@@ -49,7 +77,8 @@ jobs:
             -DCMAKE_C_COMPILER=clang-22 \
             -DCMAKE_CXX_COMPILER=clang++-22 \
             -DRUN_CLANG_TIDY_BIN=/usr/bin/run-clang-tidy-22 \
-            -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm
+            -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm \
+            -DOCLGRIND_ROOT=$HOME/.local/oclgrind
 
       - name: Check code formatting
         run: |
@@ -88,8 +117,31 @@ jobs:
           sudo update-alternatives --install /usr/bin/llvm-dis llvm-dis /usr/bin/llvm-dis-22 100
           sudo update-alternatives --install /usr/bin/lldb lldb /usr/bin/lldb-22 100
           sudo apt-get install -y --no-install-recommends liblldb-22-dev liblldb-22 || true
+          sudo apt-get install -y --no-install-recommends libclang-22-dev libpolly-22-dev
           echo "/usr/lib/llvm-22/bin" >> $GITHUB_PATH
           echo "LLDB_DEBUGSERVER_PATH=/usr/lib/llvm-22/bin/lldb-server" >> $GITHUB_ENV
+
+      - name: Cache Oclgrind
+        id: oclgrind-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/oclgrind
+          key: oclgrind-${{ env.OCLGRIND_COMMIT }}-llvm22-${{ runner.os }}
+
+      - name: Build Oclgrind
+        if: steps.oclgrind-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/jrprice/Oclgrind.git oclgrind-src
+          git -C oclgrind-src checkout ${OCLGRIND_COMMIT}
+          cmake -S oclgrind-src -B oclgrind-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$HOME/.local/oclgrind \
+            -DCMAKE_C_COMPILER=clang-22 \
+            -DCMAKE_CXX_COMPILER=clang++-22 \
+            -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm \
+            -DCLANG_ROOT=/usr/lib/llvm-22
+          cmake --build oclgrind-build -- -j$(nproc)
+          cmake --install oclgrind-build
 
       - name: Setup Micromamba & Install PoCL
         id: micromamba
@@ -122,7 +174,8 @@ jobs:
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_C_COMPILER=clang-22 \
             -DCMAKE_CXX_COMPILER=clang++-22 \
-            -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm
+            -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm \
+            -DOCLGRIND_ROOT=$HOME/.local/oclgrind
 
       - name: Build Project
         run: |

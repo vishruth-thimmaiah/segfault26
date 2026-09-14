@@ -13,7 +13,7 @@ A source-level debugger for OpenCL kernels running on CPU device backends (`pocl
 - OpenCL 1.2+ ICD loader and development headers (`ocl-icd`, `opencl-headers`)
 - LLVM / LLDB development libraries: **LLVM 22.0+ minimum** (tested and verified on **LLVM 23**)
 - PoCL (Portable Computing Language): **PoCL 7.0+ minimum** (**PoCL 7.1+ recommended** via `conda-forge` for modern LLVM compatibility)
-- Oclgrind (for emulator backend)
+- Oclgrind (for the emulator backend) — build from source, see below
 
 ### Package Installation
 
@@ -42,6 +42,23 @@ sudo dnf install -y gcc-c++ cmake clang llvm-devel lldb-devel \
 mamba install -c conda-forge pocl lit
 ```
 
+#### Oclgrind (emulator backend)
+
+Build Oclgrind from source against the same LLVM as `ocldbg`. Distribution
+packages are built against older LLVM releases, and the debugger plugin shares
+Oclgrind's C++ ABI, so a mismatched pair will fail to load at run time.
+
+```bash
+git clone https://github.com/jrprice/Oclgrind.git
+cmake -S Oclgrind -B Oclgrind/build \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX=$HOME/.local/oclgrind \
+      -DLLVM_DIR=/usr/lib/llvm-22/lib/cmake/llvm \
+      -DCLANG_ROOT=/usr/lib/llvm-22
+cmake --build Oclgrind/build -- -j4
+cmake --install Oclgrind/build
+```
+
 ---
 
 ## 2. Build Instructions
@@ -59,6 +76,10 @@ Run the provided build script:
    cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
    ```
 
+   Add `-DOCLGRIND_ROOT=$HOME/.local/oclgrind` to build the Oclgrind backend's
+   plugin. Without it the rest of the project still builds, and the Oclgrind
+   backend reports that it was built without support when asked to launch.
+
 2. **Compile:**
    ```bash
    cmake --build build -- -j$(nproc)
@@ -67,6 +88,7 @@ Run the provided build script:
 3. **Artifacts Generated in `build/`:**
    - `build/ocldbg` — The main debugger CLI executable and DAP server
    - `build/libocldbg_rt.so` — The runtime interposition shared library for pocl
+   - `build/libocldbg_oclgrind_plugin.so` — Oclgrind plugin (only when Oclgrind was found)
    - `build/libocldbg_core.a` — Debugger core static library
    - `build/test_host_runner` — OpenCL host application for testing
 
@@ -82,6 +104,29 @@ Outputs:
 ```text
 Usage: ocldbg [--backend cpu|oclgrind] [--port <N>] <host_binary> [args...]
 ```
+
+### Debugging on the Oclgrind Emulator
+
+Oclgrind interprets the kernel inside the host program, so this path uses neither
+LLDB nor ptrace. `ocldbg` injects its plugin, halts the interpreter on a kernel
+source line, and reports one work-item per stop:
+
+```bash
+OCLDBG_BUILD_OPTIONS=-cl-opt-disable ./build/ocldbg --backend oclgrind --dry-run \
+    --break-at 7 --break-for 3 --print gx \
+    ./build/test_host_runner tests/kernels/hello_kernel.cl
+```
+
+```text
+[ocldbg] Breakpoint hit at line 7 for WI(0,0,0) grp(0,0,0) (hit 1):
+  gx = 0
+[ocldbg] Breakpoint hit at line 7 for WI(1,0,0) grp(0,0,0) (hit 2):
+  gx = 1
+```
+
+Oclgrind always compiles kernels with debug info and rejects `-g`, which is why
+the build options are overridden above. Work-items run one at a time in a
+deterministic order, so the reported sequence is reproducible.
 
 ### Run Host Test Target
 Verify OpenCL platform and device discovery on your host:

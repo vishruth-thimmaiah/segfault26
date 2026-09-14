@@ -1,49 +1,38 @@
 #pragma once
 #include "OclgrindLocationBackend.h"
+#include "OclgrindProtocol.h"
 #include "ocldbg/Backend.h"
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
-
-// Forward-declare Oclgrind types to avoid pulling in all Oclgrind headers
-// in our public interface. Include oclgrind/src/core/Plugin.h in the .cpp.
-namespace oclgrind {
-class WorkItem;
-}
 
 namespace ocldbg {
 
-/// Execution context for a stopped Oclgrind work-item.
-/// The ExecCtxHandle in OCLWorkItem points to one of these.
+/// Oclgrind's WorkItem object lives in the host program's address space, so a
+/// work-item is addressed by global ID over the channel rather than by pointer.
 struct OclgrindExecContext {
-    const oclgrind::WorkItem *wi = nullptr; ///< Oclgrind interpreter work-item
-    // TODO (Person D): add any additional state needed to read variables
+    Size3 global_id;
+    oclgrind_proto::LineChannel *channel = nullptr;
 };
 
-/// Backend implementation for Oclgrind.
+/// Backend for the Oclgrind OpenCL simulator.
 ///
-/// Owner: Person D
+/// Oclgrind interprets kernels inside the host program, so there is nothing to
+/// attach to. The backend launches the host program with Oclgrind's runtime
+/// preloaded and plugin/DebugPlugin.h injected, then drives it over a socket.
 ///
-/// Strategy: adapt Oclgrind's existing interactive debugger rather than
-/// building from raw plugin callbacks. Read src/plugins/InteractiveDebugger.cpp
-/// to understand how it halts execution and reads state, then expose the
-/// same state through the Backend/LocationBackend interfaces.
-///
-/// Integration options (start with in-process):
-///   In-process:  OclgrindBackend runs as an Oclgrind Plugin in the same
-///                process as the OpenCL host program.
-///   Out-of-process: Plugin communicates over a Unix socket to a separate
-///                   ocldbg DAP server process.
-///
-/// Open questions (PLANNING.md §9 items 5-8):
-///   - Does instructionExecuted fire at IR instruction granularity?
-///   - Can execution be suspended mid-work-group?
-///   - Is sequential WI scheduling order stable?
+/// Work-items run one at a time in a deterministic order because the plugin
+/// declares itself thread-unsafe. Breakpoints match on source line only, and
+/// only work-items of running or pending work-groups can be selected.
 class OclgrindBackend final : public Backend {
 public:
     OclgrindBackend();
     ~OclgrindBackend() override;
+
+    OclgrindBackend(const OclgrindBackend &) = delete;
+    OclgrindBackend &operator=(const OclgrindBackend &) = delete;
 
     bool launch(const std::string &host_binary, const std::vector<std::string> &args) override;
     void detach() override;
@@ -61,11 +50,20 @@ public:
 
     size_t read_global_memory(HostAddress addr, void *buf, size_t length) override;
 
+    /// True while the host program is halted and able to answer queries.
+    [[nodiscard]] bool halted() const;
+
+    /// The stop callback carries work-item identity only, so callers reporting
+    /// a location read the line here.
+    [[nodiscard]] unsigned last_stop_line() const;
+
 private:
+    void resume_with(std::string_view command);
+
     OclgrindLocationBackend loc_backend_;
     StopCallback stop_cb_;
 
-    struct Impl; // holds Oclgrind Runtime / Plugin references
+    struct Impl;
     std::unique_ptr<Impl> impl_;
 };
 

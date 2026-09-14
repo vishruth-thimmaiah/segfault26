@@ -38,6 +38,12 @@ if not filecheck or not os.path.exists(filecheck):
 llvm_dis = shutil.which("llvm-dis") or "llvm-dis"
 clangxx = shutil.which("clang++") or "clang++"
 
+# The Oclgrind backend needs the plugin that gets built only when Oclgrind
+# was found; tests that drive it declare REQUIRES: oclgrind.
+oclgrind_plugin = getattr(config, "oclgrind_plugin", "")
+if oclgrind_plugin and os.path.exists(oclgrind_plugin):
+    config.available_features.add("oclgrind")
+
 config.substitutions.append(("%test_host_runner", host_runner))
 config.substitutions.append(("%ocldbg", ocldbg))
 config.substitutions.append(("%FileCheck", filecheck))

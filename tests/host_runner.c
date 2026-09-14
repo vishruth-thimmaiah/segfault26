@@ -106,7 +106,12 @@ static cl_program build_kernel_program(cl_context context, cl_device_id device,
         return NULL;
     }
 
-    const char *build_options = "-g -cl-opt-disable";
+    // Oclgrind always emits debug info and rejects -g, so the flags are
+    // overridable rather than fixed.
+    const char *build_options = getenv("OCLDBG_BUILD_OPTIONS");
+    if (!build_options) {
+        build_options = "-g -cl-opt-disable";
+    }
     err = clBuildProgram(program, 1, &device, build_options, NULL, NULL);
     if (err != CL_SUCCESS) {
         size_t log_size = 0;
