@@ -62,6 +62,70 @@ VarValue eval_from_sbvalue(lldb::SBValue val, const VarInfo &var) {
     return result;
 }
 
+constexpr std::array<const char *, 32> kX86Regs = {
+    "rax",  "rdx",  "rcx",  "rbx",  "rsi",  "rdi",   "rbp",   "rsp",   "r8",    "r9",   "r10",
+    "r11",  "r12",  "r13",  "r14",  "r15",  "rip",   "xmm0",  "xmm1",  "xmm2",  "xmm3", "xmm4",
+    "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14"};
+
+int64_t decode_sleb128(const uint8_t *&p, const uint8_t *end) {
+    int64_t result = 0;
+    int shift = 0;
+    uint8_t byte = 0;
+    do {
+        if (p >= end) {
+            break;
+        }
+        byte = *p++;
+        result |= static_cast<int64_t>(byte & 0x7f) << shift;
+        shift += 7;
+    } while ((byte & 0x80) != 0);
+    if ((shift < 64) && ((byte & 0x40) != 0)) {
+        result |= -(static_cast<int64_t>(1) << shift);
+    }
+    return result;
+}
+
+VarValue eval_from_memory(const lldb::SBFrame &frame, lldb::addr_t addr, const VarInfo &var) {
+    VarValue result;
+    result.name = var.name;
+    result.type_name = var.type_name;
+    result.address_space = var.address_space;
+    if (addr == 0 || addr == LLDB_INVALID_ADDRESS) {
+        return result;
+    }
+    lldb::SBProcess process = frame.GetThread().GetProcess();
+    if (!process.IsValid()) {
+        return result;
+    }
+
+    lldb::SBError err;
+    if (var.type_name == "int" || var.type_name == "signed int") {
+        int32_t ival = 0;
+        process.ReadMemory(addr, &ival, sizeof(ival), err);
+        if (err.Success()) {
+            result.value_str = std::to_string(ival);
+            result.available = true;
+        }
+    } else if (var.type_name == "float") {
+        float fval = 0.0F;
+        process.ReadMemory(addr, &fval, sizeof(fval), err);
+        if (err.Success()) {
+            result.value_str = std::to_string(fval);
+            result.available = true;
+        }
+    } else if (var.type_name.ends_with("*")) {
+        uint64_t pval = 0;
+        process.ReadMemory(addr, &pval, sizeof(pval), err);
+        if (err.Success()) {
+            std::array<char, 32> buf{};
+            std::snprintf(buf.data(), buf.size(), "0x%lx", static_cast<unsigned long>(pval));
+            result.value_str = buf.data();
+            result.available = true;
+        }
+    }
+    return result;
+}
+
 VarValue eval_from_register(lldb::SBFrame frame, uint8_t op, const VarInfo &var) {
     VarValue result;
     result.name = var.name;
@@ -69,16 +133,11 @@ VarValue eval_from_register(lldb::SBFrame frame, uint8_t op, const VarInfo &var)
     result.address_space = var.address_space;
 
     uint8_t reg_idx = op - 0x50;
-    constexpr std::array<const char *, 32> x86_regs = {
-        "rax",  "rdx",  "rcx",  "rbx",  "rsi",  "rdi",   "rbp",   "rsp",   "r8",    "r9",   "r10",
-        "r11",  "r12",  "r13",  "r14",  "r15",  "rip",   "xmm0",  "xmm1",  "xmm2",  "xmm3", "xmm4",
-        "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14"};
-
-    if (reg_idx >= x86_regs.size()) {
+    if (reg_idx >= kX86Regs.size()) {
         return result;
     }
 
-    lldb::SBValue reg_val = frame.FindRegister(x86_regs[reg_idx]);
+    lldb::SBValue reg_val = frame.FindRegister(kX86Regs[reg_idx]);
     if (!reg_val.IsValid()) {
         return result;
     }
@@ -217,6 +276,42 @@ size_t PoclCPUBackend::read_global_memory(HostAddress /*addr*/, void * /*buf*/, 
     return 0;
 }
 
+static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const VarInfo &var) {
+    const auto &expr = var.dwarf_location_expr;
+    if (expr.empty()) {
+        return {};
+    }
+    uint8_t op = expr[0];
+    if (op >= 0x50 && op <= 0x6f) { // DW_OP_reg0..DW_OP_reg31
+        return eval_from_register(frame, op, var);
+    }
+    if (op == 0x9e) { // DW_OP_implicit_value
+        return eval_implicit_value(expr, var);
+    }
+    if (op >= 0x70 && op <= 0x8f) { // DW_OP_breg0..DW_OP_breg31
+        uint8_t reg_idx = op - 0x70;
+        if (reg_idx < kX86Regs.size()) {
+            lldb::SBValue reg_val = frame.FindRegister(kX86Regs[reg_idx]);
+            if (reg_val.IsValid()) {
+                const uint8_t *p = expr.data() + 1;
+                int64_t offset = decode_sleb128(p, expr.data() + expr.size());
+                lldb::addr_t addr = reg_val.GetValueAsUnsigned(0) + offset;
+                return eval_from_memory(frame, addr, var);
+            }
+        }
+    }
+    if (op == 0x91) { // DW_OP_fbreg
+        lldb::addr_t fb = frame.GetFP();
+        if (fb == 0 || fb == LLDB_INVALID_ADDRESS) {
+            fb = frame.GetSP();
+        }
+        const uint8_t *p = expr.data() + 1;
+        int64_t offset = decode_sleb128(p, expr.data() + expr.size());
+        return eval_from_memory(frame, fb + offset, var);
+    }
+    return {};
+}
+
 VarValue CPULocationBackend::evaluate(const VarInfo &var, ExecCtxHandle exec_ctx) {
     if (exec_ctx == nullptr) {
         return {};
@@ -234,16 +329,10 @@ VarValue CPULocationBackend::evaluate(const VarInfo &var, ExecCtxHandle exec_ctx
         }
     }
 
-    // Fallback: evaluate DWARF location expression directly using registers
     if (!var.dwarf_location_expr.empty()) {
-        const auto &expr = var.dwarf_location_expr;
-        uint8_t op = expr[0];
-        // DW_OP_reg0..DW_OP_reg31 (0x50 .. 0x6f)
-        if (op >= 0x50 && op <= 0x6f) {
-            return eval_from_register(frame, op, var);
-        }
-        if (op == 0x9e) { // DW_OP_implicit_value
-            return eval_implicit_value(expr, var);
+        VarValue dwarf_res = eval_from_dwarf_expr(frame, var);
+        if (dwarf_res.available) {
+            return dwarf_res;
         }
     }
 

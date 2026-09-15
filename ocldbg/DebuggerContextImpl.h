@@ -15,6 +15,15 @@
 
 namespace ocldbg {
 
+struct InternalOCLBreakpoint {
+    size_t id = 0;
+    std::string file;
+    unsigned line = 0;
+    bool resolved = false;
+    uint64_t address = 0;
+    lldb::SBBreakpoint sb_bp;
+};
+
 struct DebuggerContext::Impl {
     lldb::SBDebugger debugger;
     lldb::SBTarget target;
@@ -26,6 +35,10 @@ struct DebuggerContext::Impl {
     WorkGroupTracker wg_tracker;
     std::unique_ptr<CPUABI> abi{CPUABI::create_host_abi()};
     DWARFSourceModel dwarf_model;
+    std::vector<InternalOCLBreakpoint> ocl_breakpoints;
+    size_t next_ocl_bp_id = 1;
+    lldb::SBBreakpoint ocl_trampoline_bp;
+    std::optional<OCLWorkItem> selected_work_item;
 };
 
 } // namespace ocldbg
