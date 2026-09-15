@@ -194,10 +194,6 @@ VarInfo extract_var_info(DWARFDie child, HostAddress pc, const DWARFSourceModel 
     if (type_die.isValid()) {
         v.type_name = model.type_name(type_die.getOffset());
     }
-    if (v.type_name.ends_with("*")) {
-        v.address_space = "__global";
-    }
-
     v.dwarf_location_expr = extract_location_expr(child, pc);
     return v;
 }

@@ -810,7 +810,7 @@ bool DebuggerContext::resolve_pending_ocl_breakpoints() {
 std::vector<VarValue> DebuggerContext::inspect_variables(const OCLWorkItem &wi) {
     load_kernel_dwarf();
     PoclCPUBackend backend;
-    OCLVariableResolver resolver(impl_->dwarf_model);
+    OCLVariableResolver resolver(impl_->dwarf_model, impl_->address_spaces);
     return resolver.resolve(wi, backend);
 }
 
@@ -923,7 +923,8 @@ int DebuggerContext::run_dap(const std::string &backend_name, uint16_t dap_port)
     }
 
     DWARFSourceModel dwarf;
-    OCLVariableResolver resolver(dwarf);
+    OCLAddressSpaces address_spaces;
+    OCLVariableResolver resolver(dwarf, address_spaces);
     DAPServer dap(*backend, dwarf, resolver);
 
     if (dap_port > 0) {

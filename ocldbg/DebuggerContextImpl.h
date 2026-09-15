@@ -3,6 +3,7 @@
 #include "backends/cpu/CPUABI.h"
 #include "backends/cpu/WorkGroupTracker.h"
 #include "dwarf/DWARFSourceModel.h"
+#include "ocl_debug_model/OCLAddressSpaces.h"
 #include "ocldbg/DebuggerContext.h"
 
 #include <lldb/API/SBBreakpoint.h>
@@ -35,6 +36,7 @@ struct DebuggerContext::Impl {
     WorkGroupTracker wg_tracker;
     std::unique_ptr<CPUABI> abi{CPUABI::create_host_abi()};
     DWARFSourceModel dwarf_model;
+    OCLAddressSpaces address_spaces;
     std::vector<InternalOCLBreakpoint> ocl_breakpoints;
     size_t next_ocl_bp_id = 1;
     lldb::SBBreakpoint ocl_trampoline_bp;

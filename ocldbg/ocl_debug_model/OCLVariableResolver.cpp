@@ -15,7 +15,7 @@ namespace ocldbg {
 namespace {
 
 std::vector<VarValue> fallback_from_frame(lldb::SBFrame frame, ExecCtxHandle exec_ctx,
-                                          Backend &backend) {
+                                          Backend &backend, const OCLAddressSpaces &spaces) {
     std::vector<VarValue> results;
     if (!frame.IsValid()) {
         return results;
@@ -30,32 +30,39 @@ std::vector<VarValue> fallback_from_frame(lldb::SBFrame frame, ExecCtxHandle exe
         VarInfo info;
         info.name = v.GetName() != nullptr ? v.GetName() : "";
         info.type_name = v.GetTypeName() != nullptr ? v.GetTypeName() : "";
-        if (info.type_name.ends_with("*")) {
-            info.address_space = "__global";
-        }
+        info.address_space = spaces.lookup(info.name, info.type_name);
         VarValue val = backend.location_backend().evaluate(info, exec_ctx);
         results.push_back(std::move(val));
     }
     return results;
 }
 
-void ensure_dwarf_loaded(DWARFSourceModel &dwarf, const lldb::SBFrame &frame) {
-    if (dwarf.loaded() || !frame.IsValid()) {
+void ensure_loaded(DWARFSourceModel &dwarf, OCLAddressSpaces &spaces, const lldb::SBFrame &frame) {
+    if ((dwarf.loaded() && spaces.loaded()) || !frame.IsValid()) {
         return;
     }
     lldb::SBAddress sb_addr = frame.GetPCAddress();
     lldb::SBModule mod = sb_addr.GetModule();
-    if (mod.IsValid()) {
-        std::array<char, 1024> mod_path{};
-        if (mod.GetFileSpec().GetPath(mod_path.data(), mod_path.size()) > 0) {
-            dwarf.load(mod_path.data());
-        }
+    if (!mod.IsValid()) {
+        return;
+    }
+    std::array<char, 1024> mod_path{};
+    if (mod.GetFileSpec().GetPath(mod_path.data(), mod_path.size()) == 0) {
+        return;
+    }
+    if (!dwarf.loaded()) {
+        dwarf.load(mod_path.data());
+    }
+    if (!spaces.loaded()) {
+        spaces.load(mod_path.data());
     }
 }
 
 } // namespace
 
-OCLVariableResolver::OCLVariableResolver(DWARFSourceModel &dwarf_model) : dwarf_(dwarf_model) {}
+OCLVariableResolver::OCLVariableResolver(DWARFSourceModel &dwarf_model,
+                                         OCLAddressSpaces &address_spaces)
+    : dwarf_(dwarf_model), address_spaces_(address_spaces) {}
 
 std::vector<VarValue> OCLVariableResolver::resolve(const OCLWorkItem &wi, Backend &backend) const {
     std::vector<VarValue> results;
@@ -67,7 +74,7 @@ std::vector<VarValue> OCLVariableResolver::resolve(const OCLWorkItem &wi, Backen
 
     if (ctx != nullptr && ctx->frame.IsValid()) {
         runtime_pc = ctx->frame.GetPC();
-        ensure_dwarf_loaded(dwarf_, ctx->frame);
+        ensure_loaded(dwarf_, address_spaces_, ctx->frame);
         file_pc = ctx->frame.GetPCAddress().GetFileAddress();
     }
 
@@ -79,13 +86,14 @@ std::vector<VarValue> OCLVariableResolver::resolve(const OCLWorkItem &wi, Backen
         vars = dwarf_.variables_in_scope(runtime_pc);
     }
 
-    for (const auto &v : vars) {
+    for (auto &v : vars) {
+        v.address_space = address_spaces_.lookup(v.name, v.type_name);
         VarValue val = backend.location_backend().evaluate(v, wi.exec_ctx);
         results.push_back(std::move(val));
     }
 
     if (results.empty() && ctx != nullptr) {
-        return fallback_from_frame(ctx->frame, wi.exec_ctx, backend);
+        return fallback_from_frame(ctx->frame, wi.exec_ctx, backend, address_spaces_);
     }
 
     return results;

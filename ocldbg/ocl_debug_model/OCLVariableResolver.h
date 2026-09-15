@@ -1,4 +1,5 @@
 #pragma once
+#include "OCLAddressSpaces.h"
 #include "dwarf/DWARFSourceModel.h"
 #include "ocldbg/Backend.h"
 #include "ocldbg/OCLWorkItem.h"
@@ -20,7 +21,7 @@ namespace ocldbg {
 /// directly — they go through this class.
 class OCLVariableResolver {
 public:
-    explicit OCLVariableResolver(DWARFSourceModel &dwarf_model);
+    OCLVariableResolver(DWARFSourceModel &dwarf_model, OCLAddressSpaces &address_spaces);
 
     /// Return all variables visible at the stopped work-item's current PC,
     /// with values resolved via the backend's LocationBackend.
@@ -31,6 +32,7 @@ public:
 
 private:
     DWARFSourceModel &dwarf_;
+    OCLAddressSpaces &address_spaces_;
 };
 
 } // namespace ocldbg
