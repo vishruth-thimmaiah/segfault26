@@ -1,4 +1,4 @@
-// RUN: env POCL_CACHE_DIR=%t.kcache POCL_CPU_NUM_WORKERS=1 %ocldbg -b -o "ocl break ocl_break.cl:11" -o "ocl break list" -o "run" -o "ocl p acc" -o "ocl print n" -o "ocl vars" -o "c" -o "ocl p acc" -o "c" -o "c" -o "c" -o "c" -o "ocl p acc" -o "ocl break delete 1" -o "c" %test_host_runner %s reduce_sum | %FileCheck %s
+// RUN: env POCL_CACHE_DIR=%t.kcache POCL_CPU_MAX_CU_COUNT=1 POCL_CPU_NUM_WORKERS=1 %ocldbg -b -o "ocl break ocl_break.cl:11" -o "ocl break list" -o "run" -o "ocl p acc" -o "ocl print n" -o "ocl vars" -o "c" -o "ocl p acc" -o "c" -o "c" -o "c" -o "c" -o "ocl p acc" -o "ocl break delete 1" -o "c" %test_host_runner %s reduce_sum | %FileCheck %s
 
 __kernel void reduce_sum(__global const float *src,
                          __global float       *dst,

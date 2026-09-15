@@ -1,4 +1,4 @@
-// RUN: env POCL_CACHE_DIR=%t.kcache %ocldbg -b -o "ocl break ocl_workitem.cl:12" -o "run" -o "ocl wi list" -o "ocl select 0" -o "ocl p gid" -o "ocl p val" -o "ocl select 3" -o "ocl wi list" -o "ocl p gid" -o "ocl p val" -o "c" -o "ocl wi list" -o "ocl select 1" -o "ocl p acc" -o "ocl break delete 1" -o "c" %test_host_runner %s reduce_sum | %FileCheck %s
+// RUN: env POCL_CACHE_DIR=%t.kcache POCL_CPU_MAX_CU_COUNT=1 POCL_CPU_NUM_WORKERS=1 %ocldbg -b -o "ocl break ocl_workitem.cl:12" -o "run" -o "ocl wi list" -o "ocl select 0" -o "ocl p gid" -o "ocl p val" -o "ocl select 3" -o "ocl wi list" -o "ocl p gid" -o "ocl p val" -o "c" -o "ocl wi list" -o "ocl select 1" -o "ocl p acc" -o "ocl break delete 1" -o "c" %test_host_runner %s reduce_sum | %FileCheck %s
 
 __kernel void reduce_sum(__global const float *src,
                          __global float       *dst,
@@ -24,7 +24,7 @@ __kernel void reduce_sum(__global const float *src,
 // CHECK: at tempfile_{{[0-9a-zA-Z]+}}.cl:12
 // CHECK: (ocldbg) ocl wi list
 // CHECK: [ocldbg] Stopped work-items:
-// CHECK-DAG: WI(0,0,0) grp(0,0,0)
+// CHECK: WI(0,0,0) grp(0,0,0)
 // CHECK: (ocldbg) ocl select 0
 // CHECK: [ocldbg] Selected work-item WI(0,0,0)
 // CHECK: (ocldbg) ocl p gid
