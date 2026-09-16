@@ -164,7 +164,7 @@ void print_help() {
         "  --break-at <line>  Break at kernel source line (e.g. --break-at 17)\n"
         "  --break-for <x>    Stop at breakpoint x times (default: every time)\n"
         "  --print <expr>     Evaluate expression at each stop (oclgrind backend; repeatable)\n"
-        "  --backend <name>   Execution backend (default: cpu)\n"
+        "  --backend <name>   Execution backend: cpu|oclgrind|amd (default: cpu)\n"
         "  --dap              Run DAP server over stdio\n"
         "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n"
         "  -v, --version      Display version and build information\n"

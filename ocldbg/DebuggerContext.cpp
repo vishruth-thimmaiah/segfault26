@@ -10,6 +10,10 @@
 #include "dwarf/DWARFSourceModel.h"
 #include "ocl_debug_model/OCLVariableResolver.h"
 
+#ifdef OCLDBG_HAVE_AMD_DBGAPI
+#include "backends/amd/AMDBackend.h"
+#endif
+
 #include <algorithm>
 #include <array>
 #include <format>
@@ -1121,6 +1125,10 @@ int DebuggerContext::run_dap(const std::string &backend_name, uint16_t dap_port)
     std::unique_ptr<Backend> backend;
     if (backend_name == "oclgrind") {
         backend = std::make_unique<OclgrindBackend>();
+#ifdef OCLDBG_HAVE_AMD_DBGAPI
+    } else if (backend_name == "amd") {
+        backend = std::make_unique<AMDBackend>();
+#endif
     } else {
         backend = std::make_unique<PoclCPUBackend>();
     }
