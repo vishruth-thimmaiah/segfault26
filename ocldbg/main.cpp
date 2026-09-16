@@ -146,7 +146,7 @@ int main(int argc, char **argv) {
     }
 
     // DAP server session
-    if (args.dap_port > 0) {
+    if (args.dap_mode || args.dap_port > 0) {
         ocldbg::DebuggerContext::init();
         ocldbg::DebuggerContext dbg;
         int ret = dbg.run_dap(args.backend_name, args.dap_port);

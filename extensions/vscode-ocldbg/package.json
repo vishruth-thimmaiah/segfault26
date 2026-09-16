@@ -1,0 +1,90 @@
+{
+    "name": "ocldbg",
+    "displayName": "OpenCL Debugger (ocldbg)",
+    "version": "0.1.0",
+    "publisher": "segfault26",
+    "description": "OpenCL Debugger (ocldbg) DAP integration for VS Code and Antigravity IDE",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "main": "./extension.js",
+    "activationEvents": [
+        "onDebugResolve:ocldbg",
+        "onDebug"
+    ],
+    "categories": [
+        "Debuggers"
+    ],
+    "contributes": {
+        "languages": [
+            {
+                "id": "opencl",
+                "aliases": ["OpenCL", "opencl", "cl"],
+                "extensions": [".cl", ".ocl"]
+            }
+        ],
+        "breakpoints": [
+            {
+                "language": "opencl"
+            },
+            {
+                "language": "c"
+            },
+            {
+                "language": "cpp"
+            }
+        ],
+        "debuggers": [
+            {
+                "type": "ocldbg",
+                "label": "OpenCL Debugger (ocldbg)",
+                "languages": [
+                    "opencl",
+                    "c",
+                    "cpp"
+                ],
+                "configurationAttributes": {
+                    "launch": {
+                        "required": [
+                            "program"
+                        ],
+                        "properties": {
+                            "program": {
+                                "type": "string",
+                                "description": "Path to the host executable."
+                            },
+                            "args": {
+                                "type": "array",
+                                "description": "Command line arguments passed to the program."
+                            },
+                            "kernel": {
+                                "type": "string",
+                                "description": "Path to OpenCL kernel source."
+                            },
+                            "cwd": {
+                                "type": "string",
+                                "description": "Working directory of the program."
+                            },
+                            "stopOnEntry": {
+                                "type": "boolean",
+                                "description": "Automatically stop after launch."
+                            },
+                            "environment": {
+                                "type": "array",
+                                "description": "Environment variables passed to the program as name/value pairs."
+                            },
+                            "env": {
+                                "type": "object",
+                                "description": "Environment variables passed to the program."
+                            },
+                            "debugServer": {
+                                "type": "number",
+                                "description": "Port of the running DAP server to connect to."
+                            }
+                        }
+                    }
+                }
+            }
+        ]
+    }
+}

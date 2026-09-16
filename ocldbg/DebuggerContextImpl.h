@@ -41,6 +41,7 @@ struct DebuggerContext::Impl {
     size_t next_ocl_bp_id = 1;
     lldb::SBBreakpoint ocl_trampoline_bp;
     std::optional<OCLWorkItem> selected_work_item;
+    bool redirect_stderr = false;
 };
 
 } // namespace ocldbg

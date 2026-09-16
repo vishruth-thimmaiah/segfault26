@@ -1,0 +1,97 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Fancy Variables (ocldbg)",
+            "type": "ocldbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/test_host_runner",
+            "args": [
+                "${workspaceFolder}/tests/kernels/fancy_variables.cl",
+                "reduce_sum"
+            ],
+            "kernel": "${workspaceFolder}/tests/kernels/fancy_variables.cl",
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "preLaunchTask": "Build All",
+            "environment": [
+                {
+                    "name": "POCL_CACHE_DIR",
+                    "value": "${workspaceFolder}/build/.pocl_cache"
+                }
+            ]
+        },
+        {
+            "name": "Debug Fancy Physics (ocldbg)",
+            "type": "ocldbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/test_host_runner",
+            "args": [
+                "${workspaceFolder}/tests/kernels/fancy_physics.cl",
+                "reduce_sum"
+            ],
+            "kernel": "${workspaceFolder}/tests/kernels/fancy_physics.cl",
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "preLaunchTask": "Build All",
+            "environment": [
+                {
+                    "name": "POCL_CACHE_DIR",
+                    "value": "${workspaceFolder}/build/.pocl_cache"
+                }
+            ]
+        },
+        {
+            "name": "Debug Host Runner (ocldbg)",
+            "type": "ocldbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/test_host_runner",
+            "args": [
+                "${workspaceFolder}/tests/kernels/reduction_bug.cl",
+                "reduce_sum"
+            ],
+            "kernel": "${workspaceFolder}/tests/kernels/reduction_bug.cl",
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "preLaunchTask": "Build All",
+            "environment": [
+                {
+                    "name": "POCL_CACHE_DIR",
+                    "value": "${workspaceFolder}/build/.pocl_cache"
+                }
+            ]
+        },
+        {
+            "name": "Debug Host Runner (ocldbg DAP TCP)",
+            "type": "ocldbg",
+            "request": "launch",
+            "debugServer": 4711,
+            "program": "${workspaceFolder}/build/test_host_runner",
+            "args": [
+                "${workspaceFolder}/tests/kernels/reduction_bug.cl",
+                "reduce_sum"
+            ],
+            "kernel": "${workspaceFolder}/tests/kernels/reduction_bug.cl",
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "Start ocldbg DAP Server"
+        },
+        {
+            "name": "Debug Host Runner (LLDB)",
+            "type": "lldb-dap",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/test_host_runner",
+            "args": [
+                "${workspaceFolder}/tests/kernels/reduction_bug.cl",
+                "reduce_sum"
+            ],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "preLaunchTask": "Build test_host_runner",
+            "env": {
+                "POCL_CPU_NUM_WORKERS": "1",
+                "POCL_CPU_MAX_CU_COUNT": "1",
+                "POCL_CACHE_DIR": "${workspaceFolder}/build/.pocl_cache"
+            }
+        }
+    ]
+}

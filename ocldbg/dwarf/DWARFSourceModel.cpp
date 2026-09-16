@@ -89,6 +89,52 @@ std::vector<HostAddress> DWARFSourceModel::source_to_pcs(const SourceLocation &l
             }
         }
     }
+
+    if (pcs.empty() && loc.line > 0) {
+        uint32_t best_line = std::numeric_limits<uint32_t>::max();
+        for (const auto &cu : impl_->dwarf->compile_units()) {
+            const DWARFDebugLine::LineTable *lt = impl_->dwarf->getLineTableForUnit(cu.get());
+            if (lt == nullptr) {
+                continue;
+            }
+            for (const auto &row : lt->Rows) {
+                if (row.Line > loc.line && row.Line < best_line) {
+                    std::string file_path;
+                    if (lt->getFileNameByIndex(
+                            row.File, cu->getCompilationDir(),
+                            DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath, file_path)) {
+                        if (loc.file.empty() || file_path.ends_with(loc.file) ||
+                            (loc.file.ends_with(".cl") && file_path.ends_with(".cl"))) {
+                            best_line = row.Line;
+                        }
+                    }
+                }
+            }
+        }
+        if (best_line != std::numeric_limits<uint32_t>::max()) {
+            for (const auto &cu : impl_->dwarf->compile_units()) {
+                const DWARFDebugLine::LineTable *lt = impl_->dwarf->getLineTableForUnit(cu.get());
+                if (lt == nullptr) {
+                    continue;
+                }
+                for (const auto &row : lt->Rows) {
+                    if (row.Line != best_line) {
+                        continue;
+                    }
+                    std::string file_path;
+                    if (lt->getFileNameByIndex(
+                            row.File, cu->getCompilationDir(),
+                            DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath, file_path)) {
+                        if (loc.file.empty() || file_path.ends_with(loc.file) ||
+                            (loc.file.ends_with(".cl") && file_path.ends_with(".cl"))) {
+                            pcs.push_back(row.Address.Address);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     std::ranges::sort(pcs);
     auto [first, last] = std::ranges::unique(pcs);
     pcs.erase(first, last);

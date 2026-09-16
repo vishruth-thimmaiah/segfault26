@@ -2,6 +2,7 @@
 
 #include "WIContextExtractor.h"
 #include "WorkGroupTracker.h"
+#include "ocldbg/DebuggerContext.h"
 
 #include <array>
 #include <cstdio>
@@ -9,6 +10,7 @@
 #include <lldb/API/SBData.h>
 #include <lldb/API/SBError.h>
 #include <lldb/API/SBValue.h>
+#include <map>
 #include <stdexcept>
 
 // TODO (Person C): implement all methods below.
@@ -81,6 +83,20 @@ int64_t decode_sleb128(const uint8_t *&p, const uint8_t *end) {
     } while ((byte & 0x80) != 0);
     if ((shift < 64) && ((byte & 0x40) != 0)) {
         result |= -(static_cast<int64_t>(1) << shift);
+    }
+    return result;
+}
+
+uint64_t decode_uleb128(const uint8_t *&p, const uint8_t *end) {
+    uint64_t result = 0;
+    int shift = 0;
+    while (p < end) {
+        uint8_t byte = *p++;
+        result |= static_cast<uint64_t>(byte & 0x7f) << shift;
+        if ((byte & 0x80) == 0) {
+            break;
+        }
+        shift += 7;
     }
     return result;
 }
@@ -204,10 +220,34 @@ VarValue eval_implicit_value(const std::vector<uint8_t> &expr, const VarInfo &va
 } // namespace
 
 struct PoclCPUBackend::Impl {
-    // TODO: LLDB SBDebugger debugger;
-    // TODO: LLDB SBTarget   target;
-    // TODO: LLDB SBProcess  process;
+    std::unique_ptr<DebuggerContext> dbg;
+    struct PendingBp {
+        SourceLocation loc;
+    };
+    std::map<uint64_t, PendingBp> pending_bps;
+    uint64_t next_bp_id = 1;
+    bool launched = false;
+    bool halted = false;
 };
+
+void PoclCPUBackend::notify_stop() {
+    if (!impl_->dbg) {
+        return;
+    }
+    auto stopped_items = impl_->dbg->list_stopped_work_items();
+    if (stopped_items.empty()) {
+        return;
+    }
+    OCLStopContext stop_ctx;
+    stop_ctx.stopped = stopped_items.front();
+    for (size_t i = 1; i < stopped_items.size(); ++i) {
+        stop_ctx.visible.push_back(stopped_items[i]);
+    }
+    impl_->halted = true;
+    if (stop_cb_) {
+        stop_cb_(stop_ctx);
+    }
+}
 
 PoclCPUBackend::PoclCPUBackend()
     : wg_tracker_(std::make_unique<WorkGroupTracker>()),
@@ -215,32 +255,55 @@ PoclCPUBackend::PoclCPUBackend()
 
 PoclCPUBackend::~PoclCPUBackend() = default;
 
-bool PoclCPUBackend::launch(const std::string & /*host_binary*/,
-                            const std::vector<std::string> & /*args*/) {
-    // TODO (Person C):
-    //   1. Set env: POCL_EXTRA_BUILD_FLAGS="-g -cl-opt-disable",
-    //               POCL_LEAVE_KERNEL_COMPILER_TEMP_FILES=1,
-    //               LD_PRELOAD=path/to/libocldbg_rt.so
-    //   2. SBDebugger::Create() -> impl_->debugger
-    //   3. debugger.CreateTarget(host_binary) -> impl_->target
-    //   4. target.Launch(...) -> impl_->process
-    //   5. Set LLDB breakpoint listener
-    return false;
+bool PoclCPUBackend::launch(const std::string &host_binary, const std::vector<std::string> &args) {
+    if (!impl_->dbg) {
+        impl_->dbg = std::make_unique<DebuggerContext>();
+    }
+    impl_->dbg->redirect_output_to_stderr();
+    for (const auto &[id, bp] : impl_->pending_bps) {
+        impl_->dbg->add_ocl_breakpoint(bp.loc.file, bp.loc.line);
+    }
+    if (!impl_->dbg->launch(host_binary, args, /*stop_at_entry=*/true)) {
+        return false;
+    }
+    std::string kernel_name;
+    for (const auto &arg : args) {
+        if (arg.size() >= 3 && arg.substr(arg.size() - 3) == ".cl") {
+            continue;
+        }
+        kernel_name = arg;
+    }
+    if (!kernel_name.empty()) {
+        impl_->dbg->set_workgroup_breakpoint(kernel_name);
+    }
+    impl_->dbg->ensure_ocl_trampoline();
+    impl_->dbg->resolve_pending_ocl_breakpoints();
+    impl_->launched = true;
+    return true;
 }
 
 void PoclCPUBackend::detach() {
-    // TODO (Person C): process.Detach()
+    if (impl_->dbg) {
+        impl_->dbg->terminate_process();
+    }
+    impl_->launched = false;
+    impl_->halted = false;
 }
 
-uint64_t PoclCPUBackend::set_breakpoint(const SourceLocation & /*loc*/) {
-    // TODO (Person C):
-    //   Use DWARFSourceModel::source_to_pcs() to get PCs, then:
-    //   impl_->target.BreakpointCreateByAddress(pc) for each PC.
-    return 0;
+uint64_t PoclCPUBackend::set_breakpoint(const SourceLocation &loc) {
+    uint64_t id = impl_->next_bp_id++;
+    impl_->pending_bps[id] = {loc};
+    if (impl_->dbg) {
+        impl_->dbg->add_ocl_breakpoint(loc.file, loc.line);
+    }
+    return id;
 }
 
-void PoclCPUBackend::remove_breakpoint(uint64_t /*bp_id*/) {
-    // TODO (Person C): impl_->target.BreakpointDelete(bp_id)
+void PoclCPUBackend::remove_breakpoint(uint64_t bp_id) {
+    impl_->pending_bps.erase(bp_id);
+    if (impl_->dbg) {
+        impl_->dbg->delete_ocl_breakpoint(bp_id);
+    }
 }
 
 void PoclCPUBackend::on_stop(StopCallback cb) {
@@ -248,22 +311,48 @@ void PoclCPUBackend::on_stop(StopCallback cb) {
 }
 
 void PoclCPUBackend::resume() {
-    // TODO (Person C): impl_->process.Continue()
+    if (!impl_->dbg) {
+        return;
+    }
+    impl_->halted = false;
+    if (impl_->dbg->continue_execution()) {
+        notify_stop();
+    }
 }
 
-void PoclCPUBackend::step_over(const OCLWorkItem & /*wi*/) {
-    // TODO (Person C): SBThread::StepOver() on the WI's host thread.
-    // Document observed stepping semantics with loops strategy.
+void PoclCPUBackend::step_over(const OCLWorkItem &wi) {
+    if (wi.exec_ctx != nullptr) {
+        const auto *ctx = static_cast<const CPUExecContext *>(wi.exec_ctx);
+        if (ctx->thread.IsValid()) {
+            lldb::SBThread thread = ctx->thread;
+            thread.StepOver();
+            notify_stop();
+        }
+    }
 }
 
-void PoclCPUBackend::step_in(const OCLWorkItem & /*wi*/) {
-    // TODO (Person C): SBThread::StepInto()
+void PoclCPUBackend::step_in(const OCLWorkItem &wi) {
+    if (wi.exec_ctx != nullptr) {
+        const auto *ctx = static_cast<const CPUExecContext *>(wi.exec_ctx);
+        if (ctx->thread.IsValid()) {
+            lldb::SBThread thread = ctx->thread;
+            thread.StepInto();
+            notify_stop();
+        }
+    }
 }
 
-bool PoclCPUBackend::select_work_item(const Size3 & /*global_id*/, OCLWorkItem & /*out*/) {
-    // TODO (Person C):
-    //   1. wg_tracker_->find_wg_for_wi(global_id) -> host_thread_id
-    //   2. wi_extractor_->extract(host_thread_id, global_id) -> OCLWorkItem
+bool PoclCPUBackend::select_work_item(const Size3 &global_id, OCLWorkItem &out) {
+    if (!impl_->dbg) {
+        return false;
+    }
+    if (impl_->dbg->select_work_item(global_id)) {
+        auto sel = impl_->dbg->get_selected_work_item();
+        if (sel.has_value()) {
+            out = *sel;
+            return true;
+        }
+    }
     return false;
 }
 
@@ -271,9 +360,11 @@ LocationBackend &PoclCPUBackend::location_backend() {
     return loc_backend_;
 }
 
-size_t PoclCPUBackend::read_global_memory(HostAddress /*addr*/, void * /*buf*/, size_t /*length*/) {
-    // TODO (Person C): impl_->process.ReadMemory(addr, buf, length, error)
-    return 0;
+size_t PoclCPUBackend::read_global_memory(HostAddress addr, void *buf, size_t length) {
+    if (!impl_->dbg) {
+        return 0;
+    }
+    return impl_->dbg->read_memory(addr, buf, length);
 }
 
 static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const VarInfo &var) {
@@ -288,6 +379,50 @@ static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const VarInfo &var) {
     if (op == 0x9e) { // DW_OP_implicit_value
         return eval_implicit_value(expr, var);
     }
+    if (op >= 0x30 && op <= 0x4f) { // DW_OP_lit0..DW_OP_lit31
+        int64_t val = op - 0x30;
+        VarValue result;
+        result.name = var.name;
+        result.type_name = var.type_name;
+        result.address_space = var.address_space;
+        if (var.type_name == "float") {
+            result.value_str = std::to_string(static_cast<float>(val));
+        } else {
+            result.value_str = std::to_string(val);
+        }
+        result.available = true;
+        return result;
+    }
+    if (op == 0x11) { // DW_OP_consts
+        const uint8_t *p = expr.data() + 1;
+        int64_t val = decode_sleb128(p, expr.data() + expr.size());
+        VarValue result;
+        result.name = var.name;
+        result.type_name = var.type_name;
+        result.address_space = var.address_space;
+        if (var.type_name == "float") {
+            result.value_str = std::to_string(static_cast<float>(val));
+        } else {
+            result.value_str = std::to_string(val);
+        }
+        result.available = true;
+        return result;
+    }
+    if (op == 0x10) { // DW_OP_constu
+        const uint8_t *p = expr.data() + 1;
+        uint64_t val = decode_uleb128(p, expr.data() + expr.size());
+        VarValue result;
+        result.name = var.name;
+        result.type_name = var.type_name;
+        result.address_space = var.address_space;
+        if (var.type_name == "float") {
+            result.value_str = std::to_string(static_cast<float>(val));
+        } else {
+            result.value_str = std::to_string(val);
+        }
+        result.available = true;
+        return result;
+    }
     if (op >= 0x70 && op <= 0x8f) { // DW_OP_breg0..DW_OP_breg31
         uint8_t reg_idx = op - 0x70;
         if (reg_idx < kX86Regs.size()) {
@@ -296,6 +431,23 @@ static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const VarInfo &var) {
                 const uint8_t *p = expr.data() + 1;
                 int64_t offset = decode_sleb128(p, expr.data() + expr.size());
                 lldb::addr_t addr = reg_val.GetValueAsUnsigned(0) + offset;
+                if (!expr.empty() && expr.back() == 0x9f) { // DW_OP_stack_value
+                    VarValue result;
+                    result.name = var.name;
+                    result.type_name = var.type_name;
+                    result.address_space = var.address_space;
+                    if (var.type_name == "float") {
+                        float fval = 0.0f;
+                        std::memcpy(&fval, &addr, sizeof(float));
+                        result.value_str = std::to_string(fval);
+                    } else if (var.type_name == "int" || var.type_name == "signed int") {
+                        result.value_str = std::to_string(static_cast<int32_t>(addr));
+                    } else {
+                        result.value_str = std::to_string(addr);
+                    }
+                    result.available = true;
+                    return result;
+                }
                 return eval_from_memory(frame, addr, var);
             }
         }
@@ -321,18 +473,52 @@ VarValue CPULocationBackend::evaluate(const VarInfo &var, ExecCtxHandle exec_ctx
         return {};
     }
 
+    static std::map<std::string, VarValue> s_param_cache;
+
     lldb::SBFrame frame = ctx->frame;
     if (!var.name.empty()) {
         lldb::SBValue val = frame.FindVariable(var.name.c_str());
         if (val.IsValid()) {
-            return eval_from_sbvalue(val, var);
+            VarValue sb_res = eval_from_sbvalue(val, var);
+            if (sb_res.available) {
+                s_param_cache[var.name] = sb_res;
+                return sb_res;
+            }
         }
     }
 
     if (!var.dwarf_location_expr.empty()) {
         VarValue dwarf_res = eval_from_dwarf_expr(frame, var);
         if (dwarf_res.available) {
+            s_param_cache[var.name] = dwarf_res;
             return dwarf_res;
+        }
+    }
+
+    if (!var.name.empty()) {
+        auto it = s_param_cache.find(var.name);
+        if (it != s_param_cache.end()) {
+            VarValue cached = it->second;
+            if (!var.type_name.empty()) {
+                cached.type_name = var.type_name;
+            }
+            if (!var.address_space.empty()) {
+                cached.address_space = var.address_space;
+            }
+            return cached;
+        }
+
+        for (const char *prefix : {"k_", "v_"}) {
+            std::string alias = std::string(prefix) + var.name;
+            lldb::SBValue alias_val = frame.FindVariable(alias.c_str());
+            if (alias_val.IsValid()) {
+                VarValue sb_res = eval_from_sbvalue(alias_val, var);
+                if (sb_res.available) {
+                    sb_res.name = var.name;
+                    s_param_cache[var.name] = sb_res;
+                    return sb_res;
+                }
+            }
         }
     }
 

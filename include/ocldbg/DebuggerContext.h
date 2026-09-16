@@ -51,7 +51,8 @@ public:
     DebuggerContext &operator=(DebuggerContext &&) noexcept;
 
     /// Launch the host binary with given arguments, intercepting at kernel dispatch.
-    bool launch(const std::string &host_binary, const std::vector<std::string> &args);
+    bool launch(const std::string &host_binary, const std::vector<std::string> &args,
+                bool stop_at_entry = false);
 
     /// If halted at clEnqueueNDRangeKernel, inspect arguments and compute launch bounds.
     bool infer_kernel_launch();
@@ -116,8 +117,18 @@ public:
     /// Access the inferred launch parameters and bounds, if available.
     [[nodiscard]] const std::optional<KernelLaunchInfo> &kernel_launch_info() const;
 
+    /// Continue execution until a breakpoint or process exit.
+    /// Returns true if execution halted at a stopped state, false if exited/crashed.
+    bool continue_execution();
+
+    /// Read memory from the debuggee process.
+    size_t read_memory(HostAddress addr, void *buf, size_t length);
+
     /// Terminate the debugee process (e.g., after a dry-run or when halting).
     void terminate_process();
+
+    /// Redirect LLDB stdout and stderr to stderr (useful in DAP mode).
+    void redirect_output_to_stderr();
 
     /// Hand over execution to the DAP server.
     int run_dap(const std::string &backend_name, uint16_t dap_port);

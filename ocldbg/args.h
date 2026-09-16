@@ -11,6 +11,7 @@ struct ProgramArgs {
     std::string host_binary;
     std::vector<std::string> host_args;
     uint16_t dap_port = 0;
+    bool dap_mode = false;
     bool dry_run = false;
     bool show_wg_bounds = false;
     bool track_wg = false;

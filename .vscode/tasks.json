@@ -1,0 +1,46 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build All",
+            "type": "shell",
+            "command": "cmake --build build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build test_host_runner",
+            "type": "shell",
+            "command": "cmake --build build --target test_host_runner",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Build ocldbg",
+            "type": "shell",
+            "command": "cmake --build build --target ocldbg",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Start ocldbg DAP Server",
+            "type": "shell",
+            "command": "${workspaceFolder}/build/ocldbg --port 4711",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": ".*",
+                    "endsPattern": ".*"
+                }
+            },
+            "dependsOn": ["Build ocldbg"]
+        }
+    ]
+}

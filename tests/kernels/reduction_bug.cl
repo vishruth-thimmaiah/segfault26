@@ -16,7 +16,7 @@ __kernel void reduce_sum(__global const float *src,
 
     float acc = 0.0f;
     /* BUG: should be i < n, not i <= n */
-    for (int i = 0; i <= n; i++) {   /* <-- set breakpoint here */
+    for (int i = 0; i <= n; i++) {
         acc += src[gx * n + i];
     }
 

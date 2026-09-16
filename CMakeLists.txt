@@ -218,8 +218,8 @@ if (LLVM_LIT_BIN AND FILECHECK_BIN AND OpenCL_FOUND)
         @ONLY
     )
     add_custom_target(runtests
-        COMMAND ${LLVM_LIT_BIN} -v ${CMAKE_CURRENT_BINARY_DIR}/tests
-        DEPENDS test_host_runner ocldbg
+        COMMAND ${LLVM_LIT_BIN} -v --timeout 10 ${CMAKE_CURRENT_BINARY_DIR}/tests
+        DEPENDS ocldbg test_host_runner
         COMMENT "Running LIT test suite for segfault26"
     )
     add_custom_target(check-lit DEPENDS runtests)

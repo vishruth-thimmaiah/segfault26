@@ -86,7 +86,9 @@ static const char *determine_kernel_name(const char *kernel_file, const char *ar
     if (arg_name) {
         return arg_name;
     }
-    if (strstr(kernel_file, "reduction")) {
+    if (strstr(kernel_file, "reduction") || strstr(kernel_file, "physics") ||
+        strstr(kernel_file, "fancy") || strstr(kernel_file, "telemetry") ||
+        strstr(kernel_file, "orbital")) {
         return "reduce_sum";
     }
     if (strstr(kernel_file, "matrix")) {
