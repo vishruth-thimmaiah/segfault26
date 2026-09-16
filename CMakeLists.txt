@@ -19,7 +19,7 @@ if (LLVM_FOUND)
     if (TARGET LLVM)
         set(LLVM_LIBS LLVM)
     else()
-        llvm_map_components_to_libnames(LLVM_LIBS core debuginfodwarf object support)
+        llvm_map_components_to_libnames(LLVM_LIBS core debuginfodwarf irreader object support)
     endif()
 else()
     message(WARNING "LLVM development package not found via CMake CONFIG; building with stub DWARF layer.")
@@ -142,6 +142,7 @@ add_library(ocldbg_core STATIC
     ocldbg/cli.cpp
     ocldbg/dwarf/DWARFSourceModel.cpp
     ocldbg/dwarf/LocationExprEval.cpp
+    ocldbg/ocl_debug_model/OCLAddressSpaces.cpp
     ocldbg/ocl_debug_model/OCLVariableResolver.cpp
     ocldbg/backends/cpu/PoclCPUBackend.cpp
     ocldbg/backends/cpu/WIContextExtractor.cpp

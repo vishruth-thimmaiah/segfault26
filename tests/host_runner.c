@@ -219,6 +219,51 @@ static int run_reduce_sum(cl_context context, cl_command_queue queue, cl_kernel 
     return (err == CL_SUCCESS) ? 0 : 1;
 }
 
+static int run_addr_spaces(cl_context context, cl_command_queue queue, cl_kernel kernel) {
+    const size_t num_wi = 16;
+    const size_t local_size = 4;
+    float h_src[16];
+    float h_table[4];
+    float h_dst[16];
+    for (size_t i = 0; i < num_wi; ++i) {
+        h_src[i] = (float)i;
+        h_dst[i] = 0.0F;
+    }
+    for (size_t i = 0; i < 4; ++i) {
+        h_table[i] = 2.0F;
+    }
+
+    cl_int err = CL_SUCCESS;
+    cl_mem d_src = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR, sizeof(h_src),
+                                  (void *)h_src, &err);
+    cl_mem d_table = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                                    sizeof(h_table), (void *)h_table, &err);
+    cl_mem d_dst = clCreateBuffer(context, CL_MEM_WRITE_ONLY, sizeof(h_dst), NULL, &err);
+
+    clSetKernelArg(kernel, 0, sizeof(cl_mem), (const void *)&d_src);
+    clSetKernelArg(kernel, 1, sizeof(cl_mem), (const void *)&d_table);
+    // A __local argument is sized by the host and has no buffer behind it.
+    clSetKernelArg(kernel, 2, sizeof(float) * local_size, NULL);
+    clSetKernelArg(kernel, 3, sizeof(cl_mem), (const void *)&d_dst);
+
+    size_t global_size = num_wi;
+    printf("[host_runner] Enqueueing kernel addr_spaces (global=%zu, local=%zu)...\n", global_size,
+           local_size);
+    err = clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global_size, &local_size, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr, "[host_runner] Failed to enqueue kernel (err=%d)\n", err);
+    }
+
+    clFinish(queue);
+    clEnqueueReadBuffer(queue, d_dst, CL_TRUE, 0, sizeof(h_dst), (void *)h_dst, 0, NULL, NULL);
+    printf("[host_runner] Result sample: dst[0]=%.1f, dst[3]=%.1f\n", h_dst[0], h_dst[3]);
+
+    clReleaseMemObject(d_src);
+    clReleaseMemObject(d_table);
+    clReleaseMemObject(d_dst);
+    return (err == CL_SUCCESS) ? 0 : 1;
+}
+
 static int run_volume_acc(cl_context context, cl_command_queue queue, cl_kernel kernel) {
     const size_t gx = 8;
     const size_t gy = 8;
@@ -348,6 +393,8 @@ int main(int argc, char **argv) {
         run_reduce_sum(context, queue, kernel);
     } else if (strcmp(kernel_name, "volume_acc") == 0) {
         run_volume_acc(context, queue, kernel);
+    } else if (strcmp(kernel_name, "addr_spaces") == 0) {
+        run_addr_spaces(context, queue, kernel);
     }
 
     clReleaseKernel(kernel);
