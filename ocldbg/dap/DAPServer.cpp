@@ -348,15 +348,21 @@ public:
 
     void handle_scopes(int req_seq, const llvm::json::Object *args) {
         int64_t frame_id = (args != nullptr) ? args->getInteger("frameId").value_or(1) : 1;
-        int64_t var_ref = frame_id * 100;
+        int64_t base_ref = frame_id * 100;
 
-        llvm::json::Object scope;
-        scope["name"] = "Locals";
-        scope["variablesReference"] = var_ref;
-        scope["expensive"] = false;
+        llvm::json::Object locals_scope;
+        locals_scope["name"] = "__local";
+        locals_scope["variablesReference"] = base_ref;
+        locals_scope["expensive"] = false;
+
+        llvm::json::Object globals_scope;
+        globals_scope["name"] = "__global";
+        globals_scope["variablesReference"] = base_ref + 1;
+        globals_scope["expensive"] = false;
 
         llvm::json::Array scopes_arr;
-        scopes_arr.push_back(std::move(scope));
+        scopes_arr.push_back(std::move(locals_scope));
+        scopes_arr.push_back(std::move(globals_scope));
 
         llvm::json::Object body;
         body["scopes"] = std::move(scopes_arr);
@@ -375,7 +381,9 @@ public:
         llvm::json::Array vars_arr;
 
         if (var_ref > 0) {
-            int tid = static_cast<int>((var_ref / 100) / 10);
+            bool is_globals = (var_ref % 100) == 1;
+            int64_t base_ref = is_globals ? (var_ref - 1) : var_ref;
+            int tid = static_cast<int>((base_ref / 100) / 10);
             if (tid == 0) {
                 tid = stopped_thread_id;
             }
@@ -388,15 +396,24 @@ public:
             }
             std::vector<VarValue> resolved = resolver.resolve(target_wi, backend);
             for (const auto &v : resolved) {
+                bool is_global_var =
+                    (v.address_space == "__global" || v.address_space == "__constant");
+                if (is_globals != is_global_var) {
+                    continue;
+                }
                 llvm::json::Object var_obj;
                 var_obj["name"] = v.name;
                 var_obj["value"] = v.available ? v.value_str : "<unavailable>";
-                var_obj["type"] = v.type_name;
+                std::string type_str = v.type_name;
+                if (!v.address_space.empty()) {
+                    type_str += " " + v.address_space;
+                }
+                var_obj["type"] = type_str;
                 var_obj["variablesReference"] = 0;
                 vars_arr.push_back(std::move(var_obj));
             }
 
-            if (vars_arr.empty() && target_wi.exec_ctx != nullptr) {
+            if (vars_arr.empty() && !is_globals && target_wi.exec_ctx != nullptr) {
                 const auto *ctx = static_cast<const CPUExecContext *>(target_wi.exec_ctx);
                 if (ctx->frame.IsValid()) {
                     lldb::SBFrame frame = ctx->frame;

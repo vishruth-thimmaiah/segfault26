@@ -22,7 +22,7 @@ __kernel void reduce_sum(__global const float *src,
 // CHECK: [dap] stopped at breakpoint
 // CHECK: [dap] threads: WI(0,0,0) grp(0,0,0)
 // CHECK: [dap] stackTrace: line 13
-// CHECK: [dap] scopes: Locals
+// CHECK: [dap] scopes: __local
 // CHECK: [dap] var: acc = 0.000000
 // CHECK: [dap] var: n = 4
 // CHECK: [dap] selectWorkItem: WI(0,0,0) grp(0,0,0)

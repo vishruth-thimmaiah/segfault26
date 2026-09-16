@@ -70,3 +70,7 @@ Testing/
 
 # local assistant guidance
 CLAUDE.md
+
+__pycache__/
+*.py[cod]
+*$py.class
