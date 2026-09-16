@@ -1,3 +1,4 @@
+// FLAGS: -k reduce_sum -g_size 16 -l_size 4 --arg-buf 80 --arg-buf 16 --arg-int 4
 /**
  * fancy_physics.cl — Particle dynamics & thermodynamics kernel
  *

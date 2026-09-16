@@ -4,6 +4,9 @@
 // RUN: %ocldbg --dry-run --track-wg %test_host_runner %s vec_add | %FileCheck %s --check-prefix=CHECK-TRACK-1D
 // RUN: %ocldbg --dry-run --track-wg %test_host_runner %s volume_acc | %FileCheck %s --check-prefix=CHECK-TRACK-3D
 // RUN: %ocldbg --dry-run --track-wg %test_host_runner %s reduce_sum | %FileCheck %s --check-prefix=CHECK-TRACK-REDUCE
+// FLAGS[reduce_sum]: -k reduce_sum -g_size 16 -l_size 4 --arg-buf 80 --arg-buf 16 --arg-int 4
+// FLAGS[vec_add]: -k vec_add -g_size 64 -l_size 16 --buffers 3
+// FLAGS[volume_acc]: -k volume_acc -g_size 8,8,4 -l_size 2,2,2 --buffers 2
 
 /**
  * workgroup_bounds.cl — Tests dynamic NDRange inference from kernel call sites

@@ -189,7 +189,7 @@ target_link_libraries(ocldbg PRIVATE
 # -----------------------------------------------------------------------------
 if (OpenCL_FOUND)
     add_executable(test_host_runner
-        tests/host_runner.c
+        examples/host_runner.c
     )
     target_link_libraries(test_host_runner PRIVATE
         OpenCL::OpenCL
@@ -244,6 +244,7 @@ if (CLANG_FORMAT_BIN)
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime_inject/*.h
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime_inject/*.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.c
     )
     add_custom_target(format
         COMMAND ${CLANG_FORMAT_BIN} -i ${CXX_FORMAT_SOURCES}

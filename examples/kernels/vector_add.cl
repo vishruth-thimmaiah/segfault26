@@ -1,3 +1,4 @@
+// FLAGS: -k vec_add -g_size 64 -l_size 16 --buffers 3
 /** hello_kernel.cl — simplest possible kernel for Milestone 1 DWARF checks */
 __kernel void vec_add(__global const float *a,
                       __global const float *b,

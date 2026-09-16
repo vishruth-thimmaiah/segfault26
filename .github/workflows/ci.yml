@@ -194,5 +194,5 @@ jobs:
 
           if [ -f ./build/test_host_runner ]; then
             echo "Checking test_host_runner..."
-            ./build/test_host_runner tests/kernels/hello_kernel.cl || true
+            ./build/test_host_runner examples/kernels/vector_add.cl || true
           fi

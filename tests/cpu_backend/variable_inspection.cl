@@ -1,5 +1,6 @@
 // RUN: %ocldbg --dry-run --track-wg --inspect-vars %test_host_runner %s reduce_sum | %FileCheck %s --check-prefix=CHECK-INSPECT
 // RUN: env POCL_CPU_NUM_WORKERS=1 %ocldbg --dry-run --break-at 23 --break-for 8 %test_host_runner %s reduce_sum | %FileCheck %s --check-prefix=CHECK-BREAK
+// FLAGS: -k reduce_sum -g_size 16 -l_size 4 --arg-buf 80 --arg-buf 16 --arg-int 4
 
 /**
  * variable_inspection.cl — Tests live DWARF variable inspection at work-group dispatch.

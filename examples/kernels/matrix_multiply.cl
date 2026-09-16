@@ -1,3 +1,4 @@
+// FLAGS: -k matmul -g_size 16,16 -l_size 4,4 --arg-buf 256 --arg-buf 256 --arg-buf 256 --arg-int 16
 /**
  * matrix_mul.cl — classic matrix multiplication kernel (C = A * B)
  *

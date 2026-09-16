@@ -1,5 +1,5 @@
-// RUN: rm -rf %t.kcache && env POCL_CACHE_DIR=%t.kcache POCL_CPU_MAX_CU_COUNT=1 POCL_CPU_NUM_WORKERS=1 \
-// RUN:   python3 %S/dap_driver.py %ocldbg %test_host_runner %s reduce_sum | %FileCheck %s
+// RUN: rm -rf %t.kcache && env POCL_CACHE_DIR=%t.kcache POCL_CPU_MAX_CU_COUNT=1 POCL_CPU_NUM_WORKERS=1 python3 %S/dap_driver.py %ocldbg %test_host_runner %s reduce_sum | %FileCheck %s
+// FLAGS: -k reduce_sum -g_size 16 -l_size 4 --arg-buf 80 --arg-buf 16 --arg-int 4
 
 __kernel void reduce_sum(__global const float *src,
                          __global float       *dst,
