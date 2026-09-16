@@ -795,6 +795,22 @@ std::vector<OCLBreakpoint> DebuggerContext::list_ocl_breakpoints() const {
     return result;
 }
 
+static bool resolve_host_breakpoint(InternalOCLBreakpoint &bp, lldb::SBTarget &target,
+                                    bool redirect_stderr) {
+    lldb::SBBreakpoint sb_bp = target.BreakpointCreateByLocation(bp.file.c_str(), bp.line);
+    if (!sb_bp.IsValid() || sb_bp.GetNumLocations() == 0) {
+        return false;
+    }
+    bp.sb_bp = sb_bp;
+    bp.resolved = true;
+    bp.address = sb_bp.GetLocationAtIndex(0).GetAddress().GetLoadAddress(target);
+    if (!redirect_stderr) {
+        std::cout << std::format("[ocldbg] Breakpoint #{}: resolved at {}:{}\n", bp.id, bp.file,
+                                 bp.line);
+    }
+    return true;
+}
+
 bool DebuggerContext::resolve_pending_ocl_breakpoints() {
     if (!impl_->target.IsValid()) {
         impl_->target = impl_->debugger.GetSelectedTarget();
@@ -809,19 +825,8 @@ bool DebuggerContext::resolve_pending_ocl_breakpoints() {
             continue;
         }
         bool is_kernel = bp.file.empty() || bp.file.ends_with(".cl");
-        if (!is_kernel) {
-            lldb::SBBreakpoint sb_bp =
-                impl_->target.BreakpointCreateByLocation(bp.file.c_str(), bp.line);
-            if (sb_bp.IsValid() && sb_bp.GetNumLocations() > 0) {
-                bp.sb_bp = sb_bp;
-                bp.resolved = true;
-                bp.address = sb_bp.GetLocationAtIndex(0).GetAddress().GetLoadAddress(impl_->target);
-                any_resolved = true;
-                if (!impl_->redirect_stderr) {
-                    std::cout << std::format("[ocldbg] Breakpoint #{}: resolved at {}:{}\n", bp.id,
-                                             bp.file, bp.line);
-                }
-            }
+        if (!is_kernel && resolve_host_breakpoint(bp, impl_->target, impl_->redirect_stderr)) {
+            any_resolved = true;
         }
     }
 
@@ -842,11 +847,9 @@ bool DebuggerContext::resolve_pending_ocl_breakpoints() {
             continue;
         }
         bool is_kernel = bp.file.empty() || bp.file.ends_with(".cl");
-        if (is_kernel) {
-            if (resolve_one_breakpoint(bp, kernel_mod, impl_->target, impl_->dwarf_model,
-                                       impl_->redirect_stderr)) {
-                any_resolved = true;
-            }
+        if (is_kernel && resolve_one_breakpoint(bp, kernel_mod, impl_->target, impl_->dwarf_model,
+                                                impl_->redirect_stderr)) {
+            any_resolved = true;
         }
     }
     return any_resolved;
@@ -952,6 +955,73 @@ const std::optional<KernelLaunchInfo> &DebuggerContext::kernel_launch_info() con
     return impl_->launch_info;
 }
 
+static void record_stopped_workgroups(lldb::SBProcess &process, CPUABI *abi,
+                                      WorkGroupTracker &wg_tracker) {
+    if (abi == nullptr) {
+        return;
+    }
+    uint32_t num_threads = process.GetNumThreads();
+    for (uint32_t i = 0; i < num_threads; ++i) {
+        lldb::SBThread t = process.GetThreadAtIndex(i);
+        if (t.IsValid() && t.GetStopReason() != lldb::eStopReasonNone) {
+            lldb::SBFrame f = t.GetFrameAtIndex(0);
+            Size3 wg_id;
+            if (abi->read_workgroup_id(f, wg_id)) {
+                wg_tracker.record_wg(t.GetThreadID(), wg_id);
+            }
+        }
+    }
+}
+
+static bool check_enqueue_ndrange(lldb::SBProcess &process, CPUABI *abi) {
+    if (abi == nullptr) {
+        return false;
+    }
+    uint32_t num_threads = process.GetNumThreads();
+    for (uint32_t i = 0; i < num_threads; ++i) {
+        lldb::SBThread t = process.GetThreadAtIndex(i);
+        if (t.IsValid() && t.GetStopReason() != lldb::eStopReasonNone) {
+            lldb::SBFrame f = t.GetFrameAtIndex(0);
+            Size3 g_sz;
+            Size3 l_sz;
+            if (abi->read_enqueue_ndrange(process, f, g_sz, l_sz)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool is_breakpoint_hit(lldb::break_id_t hit_id,
+                              const std::vector<InternalOCLBreakpoint> &breakpoints) {
+    return std::ranges::any_of(breakpoints, [hit_id](const auto &bp) {
+        return bp.sb_bp.IsValid() && bp.sb_bp.GetID() == hit_id;
+    });
+}
+
+static bool check_user_stop(lldb::SBProcess &process,
+                            const std::vector<InternalOCLBreakpoint> &breakpoints) {
+    uint32_t num_threads = process.GetNumThreads();
+    for (uint32_t i = 0; i < num_threads; ++i) {
+        lldb::SBThread t = process.GetThreadAtIndex(i);
+        if (!t.IsValid() || t.GetStopReason() == lldb::eStopReasonNone) {
+            continue;
+        }
+        lldb::StopReason reason = t.GetStopReason();
+        if (reason == lldb::eStopReasonPlanComplete || reason == lldb::eStopReasonSignal ||
+            reason == lldb::eStopReasonException) {
+            return true;
+        }
+        if (reason == lldb::eStopReasonBreakpoint) {
+            auto hit_bp_id = static_cast<lldb::break_id_t>(t.GetStopReasonDataAtIndex(0));
+            if (is_breakpoint_hit(hit_bp_id, breakpoints)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool DebuggerContext::continue_execution() {
     if (!impl_->target.IsValid()) {
         impl_->target = impl_->debugger.GetSelectedTarget();
@@ -976,71 +1046,20 @@ bool DebuggerContext::continue_execution() {
             continue;
         }
 
-        // Record any workgroups if stopped at dispatch
-        uint32_t num_threads = impl_->process.GetNumThreads();
-        for (uint32_t i = 0; i < num_threads; ++i) {
-            lldb::SBThread t = impl_->process.GetThreadAtIndex(i);
-            if (t.IsValid() && t.GetStopReason() != lldb::eStopReasonNone) {
-                lldb::SBFrame f = t.GetFrameAtIndex(0);
-                Size3 wg_id;
-                if (impl_->abi && impl_->abi->read_workgroup_id(f, wg_id)) {
-                    impl_->wg_tracker.record_wg(t.GetThreadID(), wg_id);
-                }
+        record_stopped_workgroups(impl_->process, impl_->abi.get(), impl_->wg_tracker);
+
+        if (!impl_->launch_info.has_value() &&
+            check_enqueue_ndrange(impl_->process, impl_->abi.get())) {
+            infer_kernel_launch();
+            if (!impl_->kernel_name.empty()) {
+                set_workgroup_breakpoint(impl_->kernel_name);
             }
+            ensure_ocl_trampoline();
         }
 
-        // If stopped at clEnqueueNDRangeKernel and launch_info is not yet inferred:
-        if (!impl_->launch_info.has_value()) {
-            for (uint32_t i = 0; i < num_threads; ++i) {
-                lldb::SBThread t = impl_->process.GetThreadAtIndex(i);
-                if (t.IsValid() && t.GetStopReason() != lldb::eStopReasonNone) {
-                    lldb::SBFrame f = t.GetFrameAtIndex(0);
-                    Size3 g_sz, l_sz;
-                    if (impl_->abi &&
-                        impl_->abi->read_enqueue_ndrange(impl_->process, f, g_sz, l_sz)) {
-                        infer_kernel_launch();
-                        if (!impl_->kernel_name.empty()) {
-                            set_workgroup_breakpoint(impl_->kernel_name);
-                        }
-                        ensure_ocl_trampoline();
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Resolve any pending breakpoints now that kernel module might be loaded
         resolve_pending_ocl_breakpoints();
 
-        // Check if this stop was caused by a user OCL breakpoint or step
-        bool hit_user_stop = false;
-        for (uint32_t i = 0; i < num_threads; ++i) {
-            lldb::SBThread t = impl_->process.GetThreadAtIndex(i);
-            if (!t.IsValid() || t.GetStopReason() == lldb::eStopReasonNone) {
-                continue;
-            }
-            lldb::StopReason reason = t.GetStopReason();
-            if (reason == lldb::eStopReasonPlanComplete || reason == lldb::eStopReasonSignal ||
-                reason == lldb::eStopReasonException) {
-                hit_user_stop = true;
-                break;
-            }
-            if (reason == lldb::eStopReasonBreakpoint) {
-                uint64_t hit_bp_id = t.GetStopReasonDataAtIndex(0);
-                for (const auto &bp : impl_->ocl_breakpoints) {
-                    if (bp.sb_bp.IsValid() &&
-                        bp.sb_bp.GetID() == static_cast<lldb::break_id_t>(hit_bp_id)) {
-                        hit_user_stop = true;
-                        break;
-                    }
-                }
-                if (hit_user_stop) {
-                    break;
-                }
-            }
-        }
-
-        if (hit_user_stop) {
+        if (check_user_stop(impl_->process, impl_->ocl_breakpoints)) {
             auto stopped = list_stopped_work_items();
             if (!stopped.empty()) {
                 return true;

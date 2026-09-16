@@ -32,23 +32,99 @@ void send_raw_message(const std::string &json_payload, std::ostream &out) {
 
 } // namespace
 
-struct DAPServer::Impl {
-    DAPServer &server;
-    Backend &backend;
-    DWARFSourceModel &dwarf;
-    OCLVariableResolver &resolver;
+static void apply_environment(const llvm::json::Object *args) {
+    if (args == nullptr) {
+        return;
+    }
+    if (const auto *env_arr = args->getArray("environment")) {
+        for (const auto &entry : *env_arr) {
+            if (const auto *obj = entry.getAsObject()) {
+                auto n = obj->getString("name");
+                auto v = obj->getString("value");
+                if (n && v) {
+                    setenv(n->str().c_str(), v->str().c_str(), 1);
+                }
+            }
+        }
+    }
+    if (const auto *env_obj = args->getObject("env")) {
+        for (const auto &[k, v] : *env_obj) {
+            if (auto s = v.getAsString()) {
+                setenv(k.str().c_str(), s->str().c_str(), 1);
+            }
+        }
+    }
+    if (auto cwd = args->getString("cwd")) {
+        (void)chdir(cwd->str().c_str());
+    }
+}
 
-    std::ostream *out_stream = nullptr;
-    int next_seq = 1;
-    bool running = true;
-    std::map<int, OCLWorkItem> threads;
-    int stopped_thread_id = 1;
-    std::optional<OCLWorkItem> selected_wi;
-    std::string current_source_file;
-    std::string user_source_file;
-    std::string launch_kernel_file;
-    unsigned current_line = 0;
+static std::string extract_source_path(const llvm::json::Object *args) {
+    if (args == nullptr) {
+        return "";
+    }
+    const auto *src = args->getObject("source");
+    if (src == nullptr) {
+        return "";
+    }
+    if (auto p = src->getString("path")) {
+        return p->str();
+    }
+    if (auto n = src->getString("name")) {
+        return n->str();
+    }
+    return "";
+}
 
+static llvm::json::Object create_bp_response(Backend &backend, const std::string &file_path,
+                                             const llvm::json::Value &bp_val) {
+    const auto *bp_obj = bp_val.getAsObject();
+    if (bp_obj == nullptr) {
+        return {};
+    }
+    int64_t line = bp_obj->getInteger("line").value_or(0);
+    uint64_t bp_id = 0;
+    if (line > 0) {
+        bp_id = backend.set_breakpoint(
+            SourceLocation{.file = file_path, .line = static_cast<unsigned>(line)});
+    }
+    llvm::json::Object bp_resp;
+    bp_resp["id"] = static_cast<int64_t>(bp_id);
+    bp_resp["verified"] = (bp_id > 0);
+    bp_resp["line"] = line;
+    return bp_resp;
+}
+
+static void vars_from_lldb_frame(lldb::SBFrame &frame, llvm::json::Array &vars_arr) {
+    lldb::SBValueList val_list = frame.GetVariables(true, true, true, false);
+    uint32_t num_vals = val_list.GetSize();
+    for (uint32_t i = 0; i < num_vals; ++i) {
+        lldb::SBValue val = val_list.GetValueAtIndex(i);
+        if (!val.IsValid()) {
+            continue;
+        }
+        const char *name = val.GetName();
+        if (name == nullptr) {
+            continue;
+        }
+        const char *v_str = val.GetValue();
+        if (v_str == nullptr) {
+            v_str = val.GetSummary();
+        }
+        const char *t_str = val.GetTypeName();
+        llvm::json::Object var_obj;
+        var_obj["name"] = name;
+        var_obj["value"] = (v_str != nullptr) ? v_str : "<unavailable>";
+        var_obj["type"] = (t_str != nullptr) ? t_str : "";
+        var_obj["variablesReference"] = 0;
+        vars_arr.push_back(std::move(var_obj));
+    }
+}
+
+class DAPServer::Impl {
+    friend class DAPServer;
+
+public:
     Impl(DAPServer &s, Backend &b, DWARFSourceModel &d, OCLVariableResolver &r)
         : server(s), backend(b), dwarf(d), resolver(r) {}
 
@@ -102,7 +178,7 @@ struct DAPServer::Impl {
             }
             if (launch_kernel_file.empty()) {
                 for (const auto &arg : host_args) {
-                    if (arg.size() >= 3 && arg.substr(arg.size() - 3) == ".cl") {
+                    if (arg.ends_with(".cl")) {
                         launch_kernel_file = arg;
                         break;
                     }
@@ -112,43 +188,14 @@ struct DAPServer::Impl {
                 current_source_file = launch_kernel_file;
                 user_source_file = launch_kernel_file;
             }
-            if (const auto *env_arr = args->getArray("environment")) {
-                for (const auto &entry : *env_arr) {
-                    if (const auto *obj = entry.getAsObject()) {
-                        auto n = obj->getString("name");
-                        auto v = obj->getString("value");
-                        if (n && v) {
-                            setenv(n->str().c_str(), v->str().c_str(), 1);
-                        }
-                    }
-                }
-            }
-            if (const auto *env_obj = args->getObject("env")) {
-                for (const auto &[k, v] : *env_obj) {
-                    if (auto s = v.getAsString()) {
-                        setenv(k.str().c_str(), s->str().c_str(), 1);
-                    }
-                }
-            }
-            if (auto cwd = args->getString("cwd")) {
-                (void)chdir(cwd->str().c_str());
-            }
+            apply_environment(args);
         }
         backend.launch(program, host_args);
         send_response(req_seq, "launch", "{}");
     }
 
     void handle_set_breakpoints(int req_seq, const llvm::json::Object *args) {
-        std::string file_path;
-        if (args != nullptr) {
-            if (const auto *src = args->getObject("source")) {
-                if (auto p = src->getString("path")) {
-                    file_path = p->str();
-                } else if (auto n = src->getString("name")) {
-                    file_path = n->str();
-                }
-            }
-        }
+        std::string file_path = extract_source_path(args);
         if (!file_path.empty()) {
             current_source_file = file_path;
             if (user_source_file.empty() || launch_kernel_file.empty()) {
@@ -160,19 +207,7 @@ struct DAPServer::Impl {
         if (args != nullptr) {
             if (const auto *bps = args->getArray("breakpoints")) {
                 for (const auto &bp_val : *bps) {
-                    if (const auto *bp_obj = bp_val.getAsObject()) {
-                        int64_t line = bp_obj->getInteger("line").value_or(0);
-                        uint64_t bp_id = 0;
-                        if (line > 0) {
-                            bp_id = backend.set_breakpoint(SourceLocation{
-                                .file = file_path, .line = static_cast<unsigned>(line)});
-                        }
-                        llvm::json::Object bp_resp;
-                        bp_resp["id"] = static_cast<int64_t>(bp_id);
-                        bp_resp["verified"] = (bp_id > 0);
-                        bp_resp["line"] = line;
-                        bp_resps.push_back(std::move(bp_resp));
-                    }
+                    bp_resps.push_back(create_bp_response(backend, file_path, bp_val));
                 }
             }
         }
@@ -222,61 +257,79 @@ struct DAPServer::Impl {
         send_response(req_seq, "threads", body_str);
     }
 
-    void handle_stack_trace(const OCLStopContext &current_stop, int req_seq,
-                            const llvm::json::Object *args) {
-        int tid =
-            args ? args->getInteger("threadId").value_or(stopped_thread_id) : stopped_thread_id;
-        OCLWorkItem target_wi = current_stop.stopped;
-        auto it = threads.find(tid);
-        if (it != threads.end()) {
-            target_wi = it->second;
-        }
-
-        std::string file = current_source_file.empty() ? "kernel.cl" : current_source_file;
-        std::string path = file;
-        unsigned line = current_line > 0 ? current_line : 1;
+    struct StackFrameInfo {
+        std::string file;
+        std::string path;
+        unsigned line = 1;
         std::string fn_name = "kernel";
+    };
+
+    static StackFrameInfo extract_frame_info(const OCLWorkItem &target_wi,
+                                             const std::string &default_file,
+                                             unsigned default_line) {
+        StackFrameInfo info;
+        info.file = default_file.empty() ? "kernel.cl" : default_file;
+        info.path = info.file;
+        info.line = default_line > 0 ? default_line : 1;
 
         if (target_wi.exec_ctx != nullptr) {
             const auto *ctx = static_cast<const CPUExecContext *>(target_wi.exec_ctx);
             if (ctx->frame.IsValid()) {
                 lldb::SBLineEntry le = ctx->frame.GetLineEntry();
                 if (le.IsValid()) {
-                    line = le.GetLine();
+                    info.line = le.GetLine();
                     if (const char *f = le.GetFileSpec().GetFilename()) {
-                        file = f;
+                        info.file = f;
                     }
                     std::array<char, 1024> pbuf{};
                     if (le.GetFileSpec().GetPath(pbuf.data(), pbuf.size()) > 0) {
-                        path = pbuf.data();
+                        info.path = pbuf.data();
                     }
                 }
                 if (const char *fn = ctx->frame.GetFunctionName()) {
-                    fn_name = fn;
+                    info.fn_name = fn;
                 }
             }
         }
+        return info;
+    }
 
-        bool is_temp_cl = (file.rfind("tempfile_", 0) == 0 && file.ends_with(".cl"));
-        if (is_temp_cl) {
-            std::string resolved_path =
-                !launch_kernel_file.empty() ? launch_kernel_file : user_source_file;
-            if (!resolved_path.empty()) {
-                path = resolved_path;
-                auto pos = resolved_path.find_last_of("/\\");
-                file = (pos != std::string::npos) ? resolved_path.substr(pos + 1) : resolved_path;
-            }
+    static void resolve_temp_source(StackFrameInfo &info, const std::string &preferred_path) {
+        if (!info.file.starts_with("tempfile_") || !info.file.ends_with(".cl") ||
+            preferred_path.empty()) {
+            return;
+        }
+        info.path = preferred_path;
+        auto pos = preferred_path.find_last_of("/\\");
+        info.file = (pos != std::string::npos) ? preferred_path.substr(pos + 1) : preferred_path;
+    }
+
+    void handle_stack_trace(const OCLStopContext &current_stop, int req_seq,
+                            const llvm::json::Object *args) {
+        int tid = (args != nullptr)
+                      ? static_cast<int>(args->getInteger("threadId").value_or(stopped_thread_id))
+                      : stopped_thread_id;
+        OCLWorkItem target_wi = current_stop.stopped;
+        auto it = threads.find(tid);
+        if (it != threads.end()) {
+            target_wi = it->second;
         }
 
+        StackFrameInfo frame_info =
+            extract_frame_info(target_wi, current_source_file, current_line);
+        std::string fallback_path =
+            !launch_kernel_file.empty() ? launch_kernel_file : user_source_file;
+        resolve_temp_source(frame_info, fallback_path);
+
         llvm::json::Object frame;
-        frame["id"] = static_cast<int64_t>(tid * 10 + 1);
-        frame["name"] = fn_name;
-        frame["line"] = static_cast<int64_t>(line);
+        frame["id"] = static_cast<int64_t>((tid * 10) + 1);
+        frame["name"] = frame_info.fn_name;
+        frame["line"] = static_cast<int64_t>(frame_info.line);
         frame["column"] = 1;
 
         llvm::json::Object src;
-        src["name"] = file;
-        src["path"] = path;
+        src["name"] = frame_info.file;
+        src["path"] = frame_info.path;
         frame["source"] = std::move(src);
 
         llvm::json::Array frames;
@@ -294,7 +347,7 @@ struct DAPServer::Impl {
     }
 
     void handle_scopes(int req_seq, const llvm::json::Object *args) {
-        int64_t frame_id = args ? args->getInteger("frameId").value_or(1) : 1;
+        int64_t frame_id = (args != nullptr) ? args->getInteger("frameId").value_or(1) : 1;
         int64_t var_ref = frame_id * 100;
 
         llvm::json::Object scope;
@@ -317,7 +370,8 @@ struct DAPServer::Impl {
 
     void handle_variables(const OCLStopContext &current_stop, int req_seq,
                           const llvm::json::Object *args) {
-        int64_t var_ref = args ? args->getInteger("variablesReference").value_or(0) : 0;
+        int64_t var_ref =
+            (args != nullptr) ? args->getInteger("variablesReference").value_or(0) : 0;
         llvm::json::Array vars_arr;
 
         if (var_ref > 0) {
@@ -346,29 +400,7 @@ struct DAPServer::Impl {
                 const auto *ctx = static_cast<const CPUExecContext *>(target_wi.exec_ctx);
                 if (ctx->frame.IsValid()) {
                     lldb::SBFrame frame = ctx->frame;
-                    lldb::SBValueList val_list = frame.GetVariables(true, true, true, false);
-                    uint32_t num_vals = val_list.GetSize();
-                    for (uint32_t i = 0; i < num_vals; ++i) {
-                        lldb::SBValue val = val_list.GetValueAtIndex(i);
-                        if (!val.IsValid()) {
-                            continue;
-                        }
-                        const char *name = val.GetName();
-                        if (name == nullptr) {
-                            continue;
-                        }
-                        const char *v_str = val.GetValue();
-                        if (v_str == nullptr) {
-                            v_str = val.GetSummary();
-                        }
-                        const char *t_str = val.GetTypeName();
-                        llvm::json::Object var_obj;
-                        var_obj["name"] = name;
-                        var_obj["value"] = (v_str != nullptr) ? v_str : "<unavailable>";
-                        var_obj["type"] = (t_str != nullptr) ? t_str : "";
-                        var_obj["variablesReference"] = 0;
-                        vars_arr.push_back(std::move(var_obj));
-                    }
+                    vars_from_lldb_frame(frame, vars_arr);
                 }
             }
         }
@@ -420,8 +452,9 @@ struct DAPServer::Impl {
 
     void handle_step(const OCLStopContext &current_stop, int req_seq, const std::string &cmd,
                      const llvm::json::Object *args) {
-        int tid =
-            args ? args->getInteger("threadId").value_or(stopped_thread_id) : stopped_thread_id;
+        int tid = (args != nullptr)
+                      ? static_cast<int>(args->getInteger("threadId").value_or(stopped_thread_id))
+                      : stopped_thread_id;
         OCLWorkItem target_wi = current_stop.stopped;
         auto it = threads.find(tid);
         if (it != threads.end()) {
@@ -446,6 +479,23 @@ struct DAPServer::Impl {
         backend.detach();
         running = false;
     }
+
+private:
+    DAPServer &server;
+    Backend &backend;
+    DWARFSourceModel &dwarf;
+    OCLVariableResolver &resolver;
+
+    std::ostream *out_stream = nullptr;
+    int next_seq = 1;
+    bool running = true;
+    std::map<int, OCLWorkItem> threads;
+    int stopped_thread_id = 1;
+    std::optional<OCLWorkItem> selected_wi;
+    std::string current_source_file;
+    std::string user_source_file;
+    std::string launch_kernel_file;
+    unsigned current_line = 0;
 };
 
 DAPServer::DAPServer(Backend &backend, DWARFSourceModel &dwarf, OCLVariableResolver &resolver)
@@ -490,47 +540,51 @@ DAPServer::DAPServer(Backend &backend, DWARFSourceModel &dwarf, OCLVariableResol
 
 DAPServer::~DAPServer() = default;
 
+static std::optional<size_t> read_dap_header(std::istream &in) {
+    std::string line;
+    bool got_header = false;
+    size_t content_length = 0;
+
+    while (std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+            line.pop_back();
+        }
+        if (line.empty()) {
+            if (got_header) {
+                return content_length;
+            }
+            continue;
+        }
+        if (line.starts_with("Content-Length:")) {
+            got_header = true;
+            std::string len_str = line.substr(15);
+            while (!len_str.empty() &&
+                   (std::isspace(static_cast<unsigned char>(len_str.front())) != 0)) {
+                len_str.erase(len_str.begin());
+            }
+            try {
+                content_length = std::stoull(len_str);
+            } catch (...) {
+                content_length = 0;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 void DAPServer::run_stdio() {
     impl_->out_stream = &std::cout;
     impl_->running = true;
 
     while (impl_->running && std::cin.good()) {
-        size_t content_length = 0;
-        std::string line;
-        bool got_header = false;
-
-        while (std::getline(std::cin, line)) {
-            while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
-                line.pop_back();
-            }
-            if (line.empty()) {
-                if (got_header) {
-                    break;
-                }
-                continue;
-            }
-            if (line.starts_with("Content-Length:")) {
-                got_header = true;
-                std::string len_str = line.substr(15);
-                while (!len_str.empty() &&
-                       (std::isspace(static_cast<unsigned char>(len_str.front())) != 0)) {
-                    len_str.erase(len_str.begin());
-                }
-                try {
-                    content_length = std::stoull(len_str);
-                } catch (...) {
-                    content_length = 0;
-                }
-            }
-        }
-
-        if (!got_header || content_length == 0 || std::cin.eof()) {
+        auto content_length = read_dap_header(std::cin);
+        if (!content_length.has_value() || *content_length == 0 || std::cin.eof()) {
             break;
         }
 
-        std::string json_msg(content_length, '\0');
-        std::cin.read(&json_msg[0], static_cast<std::streamsize>(content_length));
-        if (static_cast<size_t>(std::cin.gcount()) != content_length) {
+        std::string json_msg(*content_length, '\0');
+        std::cin.read(json_msg.data(), static_cast<std::streamsize>(*content_length));
+        if (std::cmp_not_equal(std::cin.gcount(), *content_length)) {
             break;
         }
 
@@ -571,10 +625,14 @@ void DAPServer::run_tcp(uint16_t port) {
 
     run_stdio();
 
-    ::dup2(saved_stdin, STDIN_FILENO);
-    ::dup2(saved_stdout, STDOUT_FILENO);
-    ::close(saved_stdin);
-    ::close(saved_stdout);
+    if (saved_stdin >= 0) {
+        ::dup2(saved_stdin, STDIN_FILENO);
+        ::close(saved_stdin);
+    }
+    if (saved_stdout >= 0) {
+        ::dup2(saved_stdout, STDOUT_FILENO);
+        ::close(saved_stdout);
+    }
 }
 
 void DAPServer::handle_message(const std::string &json_msg) {

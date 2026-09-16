@@ -367,6 +367,76 @@ size_t PoclCPUBackend::read_global_memory(HostAddress addr, void *buf, size_t le
     return impl_->dbg->read_memory(addr, buf, length);
 }
 
+static VarValue eval_const(uint8_t op, const std::vector<uint8_t> &expr, const VarInfo &var) {
+    int64_t val = 0;
+    if (op >= 0x30 && op <= 0x4f) { // DW_OP_lit0..DW_OP_lit31
+        val = op - 0x30;
+    } else if (op == 0x11) { // DW_OP_consts
+        const uint8_t *p = expr.data() + 1;
+        val = decode_sleb128(p, expr.data() + expr.size());
+    } else if (op == 0x10) { // DW_OP_constu
+        const uint8_t *p = expr.data() + 1;
+        val = static_cast<int64_t>(decode_uleb128(p, expr.data() + expr.size()));
+    } else {
+        return {};
+    }
+    VarValue result;
+    result.name = var.name;
+    result.type_name = var.type_name;
+    result.address_space = var.address_space;
+    if (var.type_name == "float") {
+        result.value_str = std::to_string(static_cast<float>(val));
+    } else {
+        result.value_str = std::to_string(val);
+    }
+    result.available = true;
+    return result;
+}
+
+static VarValue eval_breg(lldb::SBFrame &frame, uint8_t op, const std::vector<uint8_t> &expr,
+                          const VarInfo &var) {
+    uint8_t reg_idx = op - 0x70;
+    if (reg_idx >= kX86Regs.size()) {
+        return {};
+    }
+    lldb::SBValue reg_val = frame.FindRegister(kX86Regs[reg_idx]);
+    if (!reg_val.IsValid()) {
+        return {};
+    }
+    const uint8_t *p = expr.data() + 1;
+    int64_t offset = decode_sleb128(p, expr.data() + expr.size());
+    lldb::addr_t addr = reg_val.GetValueAsUnsigned(0) + offset;
+    if (!expr.empty() && expr.back() == 0x9f) { // DW_OP_stack_value
+        VarValue result;
+        result.name = var.name;
+        result.type_name = var.type_name;
+        result.address_space = var.address_space;
+        if (var.type_name == "float") {
+            float fval = 0.0F;
+            std::memcpy(&fval, &addr, sizeof(float));
+            result.value_str = std::to_string(fval);
+        } else if (var.type_name == "int" || var.type_name == "signed int") {
+            result.value_str = std::to_string(static_cast<int32_t>(addr));
+        } else {
+            result.value_str = std::to_string(addr);
+        }
+        result.available = true;
+        return result;
+    }
+    return eval_from_memory(frame, addr, var);
+}
+
+static VarValue eval_fbreg(lldb::SBFrame &frame, const std::vector<uint8_t> &expr,
+                           const VarInfo &var) {
+    lldb::addr_t fb = frame.GetFP();
+    if (fb == 0 || fb == LLDB_INVALID_ADDRESS) {
+        fb = frame.GetSP();
+    }
+    const uint8_t *p = expr.data() + 1;
+    int64_t offset = decode_sleb128(p, expr.data() + expr.size());
+    return eval_from_memory(frame, fb + offset, var);
+}
+
 static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const VarInfo &var) {
     const auto &expr = var.dwarf_location_expr;
     if (expr.empty()) {
@@ -379,89 +449,31 @@ static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const VarInfo &var) {
     if (op == 0x9e) { // DW_OP_implicit_value
         return eval_implicit_value(expr, var);
     }
-    if (op >= 0x30 && op <= 0x4f) { // DW_OP_lit0..DW_OP_lit31
-        int64_t val = op - 0x30;
-        VarValue result;
-        result.name = var.name;
-        result.type_name = var.type_name;
-        result.address_space = var.address_space;
-        if (var.type_name == "float") {
-            result.value_str = std::to_string(static_cast<float>(val));
-        } else {
-            result.value_str = std::to_string(val);
-        }
-        result.available = true;
-        return result;
-    }
-    if (op == 0x11) { // DW_OP_consts
-        const uint8_t *p = expr.data() + 1;
-        int64_t val = decode_sleb128(p, expr.data() + expr.size());
-        VarValue result;
-        result.name = var.name;
-        result.type_name = var.type_name;
-        result.address_space = var.address_space;
-        if (var.type_name == "float") {
-            result.value_str = std::to_string(static_cast<float>(val));
-        } else {
-            result.value_str = std::to_string(val);
-        }
-        result.available = true;
-        return result;
-    }
-    if (op == 0x10) { // DW_OP_constu
-        const uint8_t *p = expr.data() + 1;
-        uint64_t val = decode_uleb128(p, expr.data() + expr.size());
-        VarValue result;
-        result.name = var.name;
-        result.type_name = var.type_name;
-        result.address_space = var.address_space;
-        if (var.type_name == "float") {
-            result.value_str = std::to_string(static_cast<float>(val));
-        } else {
-            result.value_str = std::to_string(val);
-        }
-        result.available = true;
-        return result;
+    if ((op >= 0x30 && op <= 0x4f) || op == 0x11 || op == 0x10) {
+        return eval_const(op, expr, var);
     }
     if (op >= 0x70 && op <= 0x8f) { // DW_OP_breg0..DW_OP_breg31
-        uint8_t reg_idx = op - 0x70;
-        if (reg_idx < kX86Regs.size()) {
-            lldb::SBValue reg_val = frame.FindRegister(kX86Regs[reg_idx]);
-            if (reg_val.IsValid()) {
-                const uint8_t *p = expr.data() + 1;
-                int64_t offset = decode_sleb128(p, expr.data() + expr.size());
-                lldb::addr_t addr = reg_val.GetValueAsUnsigned(0) + offset;
-                if (!expr.empty() && expr.back() == 0x9f) { // DW_OP_stack_value
-                    VarValue result;
-                    result.name = var.name;
-                    result.type_name = var.type_name;
-                    result.address_space = var.address_space;
-                    if (var.type_name == "float") {
-                        float fval = 0.0f;
-                        std::memcpy(&fval, &addr, sizeof(float));
-                        result.value_str = std::to_string(fval);
-                    } else if (var.type_name == "int" || var.type_name == "signed int") {
-                        result.value_str = std::to_string(static_cast<int32_t>(addr));
-                    } else {
-                        result.value_str = std::to_string(addr);
-                    }
-                    result.available = true;
-                    return result;
-                }
-                return eval_from_memory(frame, addr, var);
+        return eval_breg(frame, op, expr, var);
+    }
+    if (op == 0x91) { // DW_OP_fbreg
+        return eval_fbreg(frame, expr, var);
+    }
+    return {};
+}
+
+static std::optional<VarValue> eval_alias(lldb::SBFrame &frame, const VarInfo &var) {
+    for (const char *prefix : {"k_", "v_"}) {
+        std::string alias = std::string(prefix) + var.name;
+        lldb::SBValue alias_val = frame.FindVariable(alias.c_str());
+        if (alias_val.IsValid()) {
+            VarValue sb_res = eval_from_sbvalue(alias_val, var);
+            if (sb_res.available) {
+                sb_res.name = var.name;
+                return sb_res;
             }
         }
     }
-    if (op == 0x91) { // DW_OP_fbreg
-        lldb::addr_t fb = frame.GetFP();
-        if (fb == 0 || fb == LLDB_INVALID_ADDRESS) {
-            fb = frame.GetSP();
-        }
-        const uint8_t *p = expr.data() + 1;
-        int64_t offset = decode_sleb128(p, expr.data() + expr.size());
-        return eval_from_memory(frame, fb + offset, var);
-    }
-    return {};
+    return std::nullopt;
 }
 
 VarValue CPULocationBackend::evaluate(const VarInfo &var, ExecCtxHandle exec_ctx) {
@@ -508,17 +520,9 @@ VarValue CPULocationBackend::evaluate(const VarInfo &var, ExecCtxHandle exec_ctx
             return cached;
         }
 
-        for (const char *prefix : {"k_", "v_"}) {
-            std::string alias = std::string(prefix) + var.name;
-            lldb::SBValue alias_val = frame.FindVariable(alias.c_str());
-            if (alias_val.IsValid()) {
-                VarValue sb_res = eval_from_sbvalue(alias_val, var);
-                if (sb_res.available) {
-                    sb_res.name = var.name;
-                    s_param_cache[var.name] = sb_res;
-                    return sb_res;
-                }
-            }
+        if (auto alias_res = eval_alias(frame, var)) {
+            s_param_cache[var.name] = *alias_res;
+            return *alias_res;
         }
     }
 
