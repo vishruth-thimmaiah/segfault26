@@ -137,14 +137,14 @@ VarValue eval_from_memory(const lldb::SBFrame &frame, lldb::addr_t addr, const V
     return result;
 }
 
-VarValue eval_from_register(lldb::SBFrame frame, const CPUABI &abi, uint8_t op,
+VarValue eval_from_register(lldb::SBFrame frame, const CPUABI &abi, uint64_t dwarf_regnum,
                             const VarInfo &var) {
     VarValue result;
     result.name = var.name;
     result.type_name = var.type_name;
     result.address_space = var.address_space;
 
-    const char *reg_name = abi.dwarf_register_name(op - 0x50);
+    const char *reg_name = abi.dwarf_register_name(dwarf_regnum);
     if (reg_name == nullptr) {
         return result;
     }
@@ -431,7 +431,12 @@ static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const CPUABI &abi, co
     }
     uint8_t op = expr[0];
     if (op >= 0x50 && op <= 0x6f) { // DW_OP_reg0..DW_OP_reg31
-        return eval_from_register(frame, abi, op, var);
+        return eval_from_register(frame, abi, op - 0x50, var);
+    }
+    if (op == 0x90) { // DW_OP_regx
+        const uint8_t *p = expr.data() + 1;
+        uint64_t regnum = decode_uleb128(p, expr.data() + expr.size());
+        return eval_from_register(frame, abi, regnum, var);
     }
     if (op == 0x9e) { // DW_OP_implicit_value
         return eval_implicit_value(expr, var);
