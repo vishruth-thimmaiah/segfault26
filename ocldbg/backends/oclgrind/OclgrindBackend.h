@@ -53,10 +53,6 @@ public:
     /// True while the host program is halted and able to answer queries.
     [[nodiscard]] bool halted() const;
 
-    /// The stop callback carries work-item identity only, so callers reporting
-    /// a location read the line here.
-    [[nodiscard]] unsigned last_stop_line() const;
-
 private:
     void resume_with(std::string_view command);
 

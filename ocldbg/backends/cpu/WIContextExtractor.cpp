@@ -2,6 +2,8 @@
 
 #include "CPUExecContext.h"
 
+#include <lldb/API/SBLineEntry.h>
+
 namespace ocldbg {
 
 WIContextExtractor::WIContextExtractor() : abi_(CPUABI::create_host_abi()) {}
@@ -13,6 +15,23 @@ WIContextExtractor::WIContextExtractor(std::unique_ptr<CPUABI> abi) : abi_(std::
 }
 
 WIContextExtractor::~WIContextExtractor() = default;
+
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
+void WIContextExtractor::set_source_location(lldb::SBFrame frame, OCLWorkItem &out) {
+    if (!frame.IsValid()) {
+        return;
+    }
+    lldb::SBLineEntry line_entry = frame.GetLineEntry();
+    if (line_entry.IsValid()) {
+        out.location.line = line_entry.GetLine();
+        if (const char *file = line_entry.GetFileSpec().GetFilename()) {
+            out.location.file = file;
+        }
+    }
+    if (const char *function = frame.GetFunctionName()) {
+        out.function = function;
+    }
+}
 
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
 bool WIContextExtractor::extract_from_frame(lldb::SBFrame frame, const Size3 &wg_id,
@@ -35,6 +54,8 @@ bool WIContextExtractor::extract_from_frame(lldb::SBFrame frame, const Size3 &wg
     out.global_id = {.x = (wg_id.x * lx) + local_id.x,
                      .y = (wg_id.y * ly) + local_id.y,
                      .z = (wg_id.z * lz) + local_id.z};
+
+    set_source_location(frame, out);
 
     auto ctx = std::make_shared<CPUExecContext>();
     ctx->host_thread_id = frame.GetThread().GetThreadID();

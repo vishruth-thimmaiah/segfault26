@@ -18,6 +18,14 @@ struct OCLWorkItem {
     Size3 group_id;      ///< work-group coordinate
     size_t work_dim = 0; ///< NDRange dimension (1, 2, or 3, 0 = unset)
 
+    /// Where this work-item is stopped, and the function it is stopped in.
+    /// Both are ordinary debugger state rather than anything backend-specific,
+    /// so they belong here: a consumer that reaches into exec_ctx for them is
+    /// tied to one backend. The file may be empty when the backend knows only
+    /// a line, as Oclgrind does for a program built from a single source.
+    SourceLocation location;
+    std::string function;
+
     /// Backend-specific execution context handle.
     /// CPU:      pointer to a CPUExecContext (wraps LLDB SBFrame)
     /// Oclgrind: pointer to the Oclgrind WorkItem object
