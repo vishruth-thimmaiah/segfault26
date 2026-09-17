@@ -34,11 +34,20 @@
 
 enum { MAX_DIMS = 3, MAX_KERNEL_ARGS = 16 };
 
-typedef enum { ARG_TYPE_BUFFER, ARG_TYPE_INT, ARG_TYPE_FLOAT } ArgType;
+typedef enum {
+    ARG_TYPE_BUFFER,
+    ARG_TYPE_BUFFER_VAL,
+    ARG_TYPE_BUFFER_RAMP,
+    ARG_TYPE_INT,
+    ARG_TYPE_FLOAT,
+    ARG_TYPE_LOCAL
+} ArgType;
 
 typedef struct {
     ArgType type;
     size_t buf_elements;
+    float init_val;
+    float ramp_scale;
     int int_val;
     float float_val;
 } KernelArgConfig;
@@ -219,45 +228,80 @@ static int parse_name_flags(int argc, char **argv, int *index, const char **kern
     return 0;
 }
 
-static int parse_arg_spec_flags(int argc, char **argv, int *index, RunnerConfig *config) {
+static int parse_buf_spec_flags(int argc, char **argv, int *index, RunnerConfig *config) {
     int i = *index;
-    if (strcmp(argv[i], "--buffers") == 0) {
-        if (i + 1 < argc) {
-            long count = strtol(argv[++i], NULL, 10);
-            for (long b = 0; b < count && config->num_args < MAX_KERNEL_ARGS; ++b) {
-                config->args[config->num_args].type = ARG_TYPE_BUFFER;
-                config->args[config->num_args].buf_elements = 0;
-                config->num_args++;
-            }
-            *index = i;
-            return 1;
-        }
-    } else if (strcmp(argv[i], "--arg-buf") == 0) {
-        if (i + 1 < argc && config->num_args < MAX_KERNEL_ARGS) {
+    if (config->num_args >= MAX_KERNEL_ARGS) {
+        return 0;
+    }
+    if (strcmp(argv[i], "--buffers") == 0 && i + 1 < argc) {
+        long count = strtol(argv[++i], NULL, 10);
+        for (long b = 0; b < count && config->num_args < MAX_KERNEL_ARGS; ++b) {
             config->args[config->num_args].type = ARG_TYPE_BUFFER;
-            config->args[config->num_args].buf_elements = (size_t)strtoul(argv[++i], NULL, 10);
+            config->args[config->num_args].buf_elements = 0;
             config->num_args++;
-            *index = i;
-            return 1;
         }
-    } else if (strcmp(argv[i], "--arg-int") == 0 || strcmp(argv[i], "--scalar-int") == 0) {
-        if (i + 1 < argc && config->num_args < MAX_KERNEL_ARGS) {
-            config->args[config->num_args].type = ARG_TYPE_INT;
-            config->args[config->num_args].int_val = (int)strtol(argv[++i], NULL, 10);
-            config->num_args++;
-            *index = i;
-            return 1;
-        }
-    } else if (strcmp(argv[i], "--arg-float") == 0) {
-        if (i + 1 < argc && config->num_args < MAX_KERNEL_ARGS) {
-            config->args[config->num_args].type = ARG_TYPE_FLOAT;
-            config->args[config->num_args].float_val = strtof(argv[++i], NULL);
-            config->num_args++;
-            *index = i;
-            return 1;
-        }
+        *index = i;
+        return 1;
+    }
+    if (strcmp(argv[i], "--arg-buf-val") == 0 && i + 2 < argc) {
+        config->args[config->num_args].type = ARG_TYPE_BUFFER_VAL;
+        config->args[config->num_args].buf_elements = (size_t)strtoul(argv[++i], NULL, 10);
+        config->args[config->num_args].init_val = strtof(argv[++i], NULL);
+        config->num_args++;
+        *index = i;
+        return 1;
+    }
+    if (strcmp(argv[i], "--arg-buf-ramp") == 0 && i + 2 < argc) {
+        config->args[config->num_args].type = ARG_TYPE_BUFFER_RAMP;
+        config->args[config->num_args].buf_elements = (size_t)strtoul(argv[++i], NULL, 10);
+        config->args[config->num_args].ramp_scale = strtof(argv[++i], NULL);
+        config->num_args++;
+        *index = i;
+        return 1;
+    }
+    if (strcmp(argv[i], "--arg-buf") == 0 && i + 1 < argc) {
+        config->args[config->num_args].type = ARG_TYPE_BUFFER;
+        config->args[config->num_args].buf_elements = (size_t)strtoul(argv[++i], NULL, 10);
+        config->num_args++;
+        *index = i;
+        return 1;
     }
     return 0;
+}
+
+static int parse_scalar_spec_flags(int argc, char **argv, int *index, RunnerConfig *config) {
+    int i = *index;
+    if (config->num_args >= MAX_KERNEL_ARGS) {
+        return 0;
+    }
+    if ((strcmp(argv[i], "--arg-int") == 0 || strcmp(argv[i], "--scalar-int") == 0) &&
+        i + 1 < argc) {
+        config->args[config->num_args].type = ARG_TYPE_INT;
+        config->args[config->num_args].int_val = (int)strtol(argv[++i], NULL, 10);
+        config->num_args++;
+        *index = i;
+        return 1;
+    }
+    if (strcmp(argv[i], "--arg-float") == 0 && i + 1 < argc) {
+        config->args[config->num_args].type = ARG_TYPE_FLOAT;
+        config->args[config->num_args].float_val = strtof(argv[++i], NULL);
+        config->num_args++;
+        *index = i;
+        return 1;
+    }
+    if (strcmp(argv[i], "--arg-local") == 0 && i + 1 < argc) {
+        config->args[config->num_args].type = ARG_TYPE_LOCAL;
+        config->args[config->num_args].buf_elements = (size_t)strtoul(argv[++i], NULL, 10);
+        config->num_args++;
+        *index = i;
+        return 1;
+    }
+    return 0;
+}
+
+static int parse_arg_spec_flags(int argc, char **argv, int *index, RunnerConfig *config) {
+    return parse_buf_spec_flags(argc, argv, index, config) ||
+           parse_scalar_spec_flags(argc, argv, index, config);
 }
 
 static void parse_arg_tokens(int argc, char **argv, RunnerConfig *config, const char **kernel_file,
@@ -339,6 +383,49 @@ static void parse_flags_from_source(const char *src, const char *filter_kernel,
     }
 }
 
+static const char *skip_ws(const char *p) {
+    while (*p && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')) {
+        p++;
+    }
+    return p;
+}
+
+static int is_ident_char(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+static int parse_ident(const char *p, char *out, size_t out_size) {
+    size_t idx = 0;
+    while (is_ident_char(*p)) {
+        if (idx + 1 < out_size) {
+            out[idx++] = *p;
+        }
+        p++;
+    }
+    out[idx] = '\0';
+    return (idx > 0) ? 1 : 0;
+}
+
+static const char *extract_kernel_name_from_source(const char *src) {
+    static char inferred_name[128];
+    const char *p = src;
+    while (p && *p) {
+        const char *k = strstr(p, "kernel");
+        if (!k) {
+            break;
+        }
+        const char *after_k = skip_ws(k + 6);
+        if (strncmp(after_k, "void", 4) == 0) {
+            const char *after_void = skip_ws(after_k + 4);
+            if (parse_ident(after_void, inferred_name, sizeof(inferred_name))) {
+                return inferred_name;
+            }
+        }
+        p = k + 6;
+    }
+    return NULL;
+}
+
 static void print_enqueue_message(const char *kernel_name, const RunnerConfig *config) {
     if (config->work_dim == 1) {
         printf("[host_runner] Enqueueing kernel %s (global=%zu, local=%zu)...\n", kernel_name,
@@ -358,47 +445,81 @@ static void print_enqueue_message(const char *kernel_name, const RunnerConfig *c
     }
 }
 
+static void init_buffer_data(float *h_buf, size_t count, const KernelArgConfig *arg, size_t arg_idx,
+                             int is_second_input) {
+    if (arg->type == ARG_TYPE_BUFFER_VAL) {
+        for (size_t j = 0; j < count; ++j) {
+            h_buf[j] = arg->init_val;
+        }
+    } else if (arg->type == ARG_TYPE_BUFFER_RAMP) {
+        for (size_t j = 0; j < count; ++j) {
+            h_buf[j] = (float)j * arg->ramp_scale;
+        }
+    } else {
+        float init_val = 0.0F;
+        if (arg_idx == 0) {
+            init_val = 1.0F;
+        } else if (is_second_input) {
+            init_val = 2.0F;
+        }
+        for (size_t j = 0; j < count; ++j) {
+            h_buf[j] = init_val;
+        }
+    }
+}
+
+static int setup_buffer_arg(cl_context context, cl_kernel kernel, const KernelArgConfig *arg,
+                            size_t arg_idx, size_t count, int is_second_input, cl_mem *d_buffers,
+                            float **h_buffers, size_t *buf_counts, int *num_buffers) {
+    cl_int err = CL_SUCCESS;
+    float *h_buf = (float *)malloc(sizeof(float) * count);
+    if (!h_buf) {
+        return 0;
+    }
+    init_buffer_data(h_buf, count, arg, arg_idx, is_second_input);
+    cl_mem d_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
+                                  sizeof(float) * count, (void *)h_buf, &err);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr, "[host_runner] Failed to create buffer %zu (err=%d)\n", arg_idx, err);
+        free(h_buf);
+        return 0;
+    }
+    clSetKernelArg(kernel, (cl_uint)arg_idx, sizeof(cl_mem), (const void *)&d_buf);
+    d_buffers[*num_buffers] = d_buf;
+    h_buffers[*num_buffers] = h_buf;
+    buf_counts[*num_buffers] = count;
+    (*num_buffers)++;
+    return 1;
+}
+
 static int setup_kernel_args(cl_context context, cl_kernel kernel, const RunnerConfig *config,
                              size_t total_elements, cl_mem *d_buffers, float **h_buffers,
                              size_t *buf_counts, int *num_buffers) {
     *num_buffers = 0;
-    cl_int err = CL_SUCCESS;
 
     for (size_t i = 0; i < config->num_args; ++i) {
-        if (config->args[i].type == ARG_TYPE_BUFFER) {
+        if (config->args[i].type == ARG_TYPE_BUFFER ||
+            config->args[i].type == ARG_TYPE_BUFFER_VAL ||
+            config->args[i].type == ARG_TYPE_BUFFER_RAMP) {
             size_t count =
                 config->args[i].buf_elements ? config->args[i].buf_elements : total_elements;
-            float *h_buf = (float *)malloc(sizeof(float) * count);
-            if (!h_buf) {
+            int is_second_input = (i == 1 && config->num_args > 2);
+            if (!setup_buffer_arg(context, kernel, &config->args[i], i, count, is_second_input,
+                                  d_buffers, h_buffers, buf_counts, num_buffers)) {
                 return 0;
             }
-            float init_val = 0.0F;
-            if (i == 0) {
-                init_val = 1.0F;
-            } else if (i == 1 && config->num_args > 2) {
-                init_val = 2.0F;
-            }
-            for (size_t j = 0; j < count; ++j) {
-                h_buf[j] = init_val;
-            }
-            cl_mem d_buf = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
-                                          sizeof(float) * count, (void *)h_buf, &err);
-            if (err != CL_SUCCESS) {
-                fprintf(stderr, "[host_runner] Failed to create buffer %zu (err=%d)\n", i, err);
-                free(h_buf);
-                return 0;
-            }
-            clSetKernelArg(kernel, (cl_uint)i, sizeof(cl_mem), (const void *)&d_buf);
-            d_buffers[*num_buffers] = d_buf;
-            h_buffers[*num_buffers] = h_buf;
-            buf_counts[*num_buffers] = count;
-            (*num_buffers)++;
         } else if (config->args[i].type == ARG_TYPE_INT) {
             cl_int val = config->args[i].int_val;
             clSetKernelArg(kernel, (cl_uint)i, sizeof(cl_int), (const void *)&val);
         } else if (config->args[i].type == ARG_TYPE_FLOAT) {
             cl_float val = config->args[i].float_val;
             clSetKernelArg(kernel, (cl_uint)i, sizeof(cl_float), (const void *)&val);
+        } else if (config->args[i].type == ARG_TYPE_LOCAL) {
+            size_t count = config->args[i].buf_elements;
+            if (count == 0) {
+                count = config->has_local_size ? config->local_size[0] : 4;
+            }
+            clSetKernelArg(kernel, (cl_uint)i, sizeof(float) * count, NULL);
         }
     }
     return 1;
@@ -475,6 +596,10 @@ int main(int argc, char **argv) {
     // If work size was not specified on CLI, parse header comments in the kernel file
     if (config.work_dim == 0) {
         parse_flags_from_source(kernel_src, kernel_name, &config, &kernel_name);
+    }
+
+    if (!kernel_name) {
+        kernel_name = extract_kernel_name_from_source(kernel_src);
     }
 
     // If still not configured, report error as required

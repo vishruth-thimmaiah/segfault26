@@ -24,6 +24,8 @@ public:
 
     bool read_enqueue_ndrange(lldb::SBProcess process, lldb::SBFrame frame, Size3 &out_global,
                               Size3 &out_local) override;
+    bool read_enqueue_kernel_name(lldb::SBProcess process, lldb::SBFrame frame,
+                                  std::string &out_kernel_name) override;
     bool read_workgroup_id(lldb::SBFrame frame, Size3 &out_wg) override;
     bool read_local_id(lldb::SBFrame frame, const Size3 &local_size, Size3 &out_local_id) override;
 

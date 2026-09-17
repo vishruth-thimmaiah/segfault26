@@ -374,6 +374,37 @@ public:
         send_response(req_seq, "scopes", body_str);
     }
 
+    static void populate_resolved_vars(const std::vector<VarValue> &resolved, bool is_globals,
+                                       llvm::json::Array &vars_arr) {
+        for (const auto &v : resolved) {
+            bool is_global_var = (v.address_space == "__global" || v.address_space == "__constant");
+            if (is_globals != is_global_var) {
+                continue;
+            }
+            llvm::json::Object var_obj;
+            var_obj["name"] = v.name;
+            var_obj["value"] = v.available ? v.value_str : "<unavailable>";
+            std::string type_str = v.type_name;
+            if (!v.address_space.empty()) {
+                type_str += " " + v.address_space;
+            }
+            var_obj["type"] = type_str;
+            var_obj["variablesReference"] = 0;
+            vars_arr.push_back(std::move(var_obj));
+        }
+    }
+
+    [[nodiscard]] OCLWorkItem resolve_target_wi(int tid, const OCLStopContext &current_stop) const {
+        auto it = threads.find(tid);
+        if (it != threads.end()) {
+            return it->second;
+        }
+        if (selected_wi.has_value()) {
+            return *selected_wi;
+        }
+        return current_stop.stopped;
+    }
+
     void handle_variables(const OCLStopContext &current_stop, int req_seq,
                           const llvm::json::Object *args) {
         int64_t var_ref =
@@ -387,31 +418,9 @@ public:
             if (tid == 0) {
                 tid = stopped_thread_id;
             }
-            OCLWorkItem target_wi = current_stop.stopped;
-            auto it = threads.find(tid);
-            if (it != threads.end()) {
-                target_wi = it->second;
-            } else if (selected_wi.has_value()) {
-                target_wi = *selected_wi;
-            }
+            OCLWorkItem target_wi = resolve_target_wi(tid, current_stop);
             std::vector<VarValue> resolved = resolver.resolve(target_wi, backend);
-            for (const auto &v : resolved) {
-                bool is_global_var =
-                    (v.address_space == "__global" || v.address_space == "__constant");
-                if (is_globals != is_global_var) {
-                    continue;
-                }
-                llvm::json::Object var_obj;
-                var_obj["name"] = v.name;
-                var_obj["value"] = v.available ? v.value_str : "<unavailable>";
-                std::string type_str = v.type_name;
-                if (!v.address_space.empty()) {
-                    type_str += " " + v.address_space;
-                }
-                var_obj["type"] = type_str;
-                var_obj["variablesReference"] = 0;
-                vars_arr.push_back(std::move(var_obj));
-            }
+            populate_resolved_vars(resolved, is_globals, vars_arr);
 
             if (vars_arr.empty() && !is_globals && target_wi.exec_ctx != nullptr) {
                 const auto *ctx = static_cast<const CPUExecContext *>(target_wi.exec_ctx);

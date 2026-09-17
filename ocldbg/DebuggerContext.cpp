@@ -396,7 +396,13 @@ bool DebuggerContext::infer_kernel_launch() {
                  .y = ((global_size.y + ly) - 1) / ly,
                  .z = ((global_size.z + lz) - 1) / lz};
 
+    std::string kname;
+    if (impl_->abi->read_enqueue_kernel_name(impl_->process, frame, kname)) {
+        impl_->kernel_name = kname;
+    }
+
     KernelLaunchInfo info{
+        .kernel_name = impl_->kernel_name,
         .global_size = global_size,
         .local_size = local_size,
         .num_groups = num_wg,
@@ -410,10 +416,12 @@ bool DebuggerContext::infer_kernel_launch() {
 }
 
 bool DebuggerContext::set_workgroup_breakpoint(const std::string &kernel_name) {
-    if (kernel_name.empty() || !impl_->target.IsValid()) {
+    if (!impl_->target.IsValid()) {
         return false;
     }
-    impl_->kernel_name = kernel_name;
+    if (!kernel_name.empty()) {
+        impl_->kernel_name = kernel_name;
+    }
 
     // Clean up any previously set workgroup breakpoint.
     if (impl_->wg_breakpoint.IsValid()) {
@@ -423,12 +431,22 @@ bool DebuggerContext::set_workgroup_breakpoint(const std::string &kernel_name) {
     // First try locating the PoCL work-group dispatch call in libpocl-devices-pthread.so.
     if (auto addr = find_pocl_dispatch_address(impl_->target)) {
         impl_->wg_breakpoint = impl_->target.BreakpointCreateByAddress(*addr);
-        return impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0;
+        if (impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0) {
+            return true;
+        }
     }
 
-    // Fall back to direct symbol name if libpocl-devices-pthread is not in use.
-    std::string sym = std::format("_pocl_kernel_{}_workgroup", kernel_name);
-    impl_->wg_breakpoint = impl_->target.BreakpointCreateByName(sym.c_str());
+    // Fall back to direct symbol name if kernel_name is specified.
+    if (!impl_->kernel_name.empty()) {
+        std::string sym = std::format("_pocl_kernel_{}_workgroup", impl_->kernel_name);
+        impl_->wg_breakpoint = impl_->target.BreakpointCreateByName(sym.c_str());
+        if (impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0) {
+            return true;
+        }
+    }
+
+    // Match any PoCL kernel workgroup function
+    impl_->wg_breakpoint = impl_->target.BreakpointCreateByRegex("_pocl_kernel_.*_workgroup");
     return impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0;
 }
 
@@ -502,17 +520,7 @@ bool DebuggerContext::set_source_breakpoint(unsigned line) {
         return false;
     }
 
-    lldb::SBModule kernel_mod;
-    for (uint32_t i = 0; i < impl_->target.GetNumModules(); ++i) {
-        lldb::SBModule m = impl_->target.GetModuleAtIndex(i);
-        const char *fn = m.GetFileSpec().GetFilename();
-        if (fn != nullptr &&
-            std::string_view(fn).find(impl_->kernel_name) != std::string_view::npos) {
-            kernel_mod = m;
-            break;
-        }
-    }
-
+    lldb::SBModule kernel_mod = find_kernel_module(impl_->target, impl_->kernel_name);
     if (!kernel_mod.IsValid()) {
         return false;
     }

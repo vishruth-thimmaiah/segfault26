@@ -3,7 +3,6 @@
 // RUN: %llvm-dis $(find %t.cache -name "program.bc" | head -n 1) -o - | %FileCheck %s --check-prefix=CHECK-PROGRAM-IR
 // RUN: %llvm-dis $(find %t.cache -name "parallel.bc" | head -n 1) -o - | %FileCheck %s --check-prefix=CHECK-PARALLEL-IR
 // FLAGS: -k vec_add -g_size 64 -l_size 16 --buffers 3
-
 /**
  * pocl_ir.cl — LIT test demonstrating that pocl uses LLVM IR as its internal
  * representation and applies IR transformation passes to lower OpenCL kernels

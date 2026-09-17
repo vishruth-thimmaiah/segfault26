@@ -8,6 +8,7 @@
 // FLAGS[vec_add]: -k vec_add -g_size 64 -l_size 16 --buffers 3
 // FLAGS[volume_acc]: -k volume_acc -g_size 8,8,4 -l_size 2,2,2 --buffers 2
 
+
 /**
  * workgroup_bounds.cl — Tests dynamic NDRange inference from kernel call sites
  * and verifies WorkGroupTracker bounds and WIContextExtractor mappings.

@@ -3,7 +3,6 @@
 // RUN: %llvm-dis $(find %t.cache -name "program.bc" | head -n 1) -o - | %FileCheck %s --check-prefix=CHECK-PROGRAM-IR
 // RUN: %llvm-dis $(find %t.cache -name "parallel.bc" | head -n 1) -o - | %FileCheck %s --check-prefix=CHECK-PARALLEL-IR
 // FLAGS: -k reduce_sum -g_size 16 -l_size 4 --arg-buf 80 --arg-buf 16 --arg-int 4
-
 /**
  * reduction_ir.cl — LIT test demonstrating pocl's IR lowering for loops and reductions.
  */

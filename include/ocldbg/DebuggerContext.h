@@ -61,7 +61,7 @@ public:
     /// Must be called after infer_kernel_launch() and before track_workgroup_dispatches().
     /// Returns true if the breakpoint resolved to at least one location (i.e. the
     /// kernel .so is already loaded), false otherwise (will resolve lazily on first run).
-    bool set_workgroup_breakpoint(const std::string &kernel_name);
+    bool set_workgroup_breakpoint(const std::string &kernel_name = "");
 
     /// Resume the process and consume stop events.
     /// If inspect_vars is true, inspects variables at the first work-group dispatch.

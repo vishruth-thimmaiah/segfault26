@@ -2,8 +2,7 @@
 // RUN: env OCLDBG_BUILD_OPTIONS=-cl-opt-disable %ocldbg --backend oclgrind --dry-run \
 // RUN:   --break-at 24 --break-for 3 --print gx --print sum %test_host_runner %s \
 // RUN:   | %FileCheck %s
-// FLAGS: -k vec_add -g_size 64 -l_size 16 --buffers 3
-
+// FLAGS: -k vec_add -g_size 64 -l_size 16 --arg-buf-ramp 64 1.0 --arg-buf-ramp 64 2.0 --arg-buf 64
 /**
  * breakpoint_stepping.cl — Tests source-level debugging on the Oclgrind simulator.
  *

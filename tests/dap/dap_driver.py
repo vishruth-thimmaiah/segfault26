@@ -49,7 +49,7 @@ def main():
         print("[dap] initialized")
 
     # 2. Launch
-    send_msg(p, {"seq": 2, "type": "request", "command": "launch", "arguments": {"program": host_runner, "args": [kernel_file, kernel_name]}})
+    send_msg(p, {"seq": 2, "type": "request", "command": "launch", "arguments": {"program": host_runner, "args": [kernel_file, kernel_name] + sys.argv[5:]}})
     r_launch = read_msg(p)
     if r_launch and r_launch.get("success"):
         print("[dap] launched")

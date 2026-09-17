@@ -266,16 +266,7 @@ bool PoclCPUBackend::launch(const std::string &host_binary, const std::vector<st
     if (!impl_->dbg->launch(host_binary, args, /*stop_at_entry=*/true)) {
         return false;
     }
-    std::string kernel_name;
-    for (const auto &arg : args) {
-        if (arg.size() >= 3 && arg.substr(arg.size() - 3) == ".cl") {
-            continue;
-        }
-        kernel_name = arg;
-    }
-    if (!kernel_name.empty()) {
-        impl_->dbg->set_workgroup_breakpoint(kernel_name);
-    }
+    impl_->dbg->set_workgroup_breakpoint();
     impl_->dbg->ensure_ocl_trampoline();
     impl_->dbg->resolve_pending_ocl_breakpoints();
     impl_->launched = true;

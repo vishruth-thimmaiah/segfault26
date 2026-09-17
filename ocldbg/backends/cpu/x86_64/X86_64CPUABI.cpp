@@ -82,6 +82,40 @@ bool X86_64CPUABI::read_enqueue_ndrange(lldb::SBProcess process, lldb::SBFrame f
 }
 
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
+bool X86_64CPUABI::read_enqueue_kernel_name(lldb::SBProcess process, lldb::SBFrame frame,
+                                            std::string &out_kernel_name) {
+    if (!process.IsValid() || !frame.IsValid()) {
+        return false;
+    }
+    bool found = false;
+    uint64_t kernel_ptr = read_reg(frame, "rsi", nullptr, found);
+    if (!found || kernel_ptr == 0) {
+        return false;
+    }
+
+    std::string expr =
+        std::format("char __kname[128] = {{0}}; "
+                    "((int(*)(void*, int, unsigned long, void*, void*))clGetKernelInfo)"
+                    "((void*){:#x}, 0x1190, 128, __kname, (void*)0); __kname",
+                    kernel_ptr);
+    lldb::SBValue val = frame.EvaluateExpression(expr.c_str());
+    if (val.IsValid() && val.GetError().Success()) {
+        const char *summary = val.GetSummary();
+        if (summary != nullptr) {
+            std::string s = summary;
+            if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+                s = s.substr(1, s.size() - 2);
+            }
+            if (!s.empty()) {
+                out_kernel_name = s;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// NOLINTNEXTLINE(performance-unnecessary-value-param)
 bool X86_64CPUABI::read_workgroup_id(lldb::SBFrame frame, Size3 &out_wg) {
     if (!frame.IsValid()) {
         return false;
