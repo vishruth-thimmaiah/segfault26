@@ -147,6 +147,8 @@ add_library(ocldbg_core STATIC
     ocldbg/backends/cpu/PoclCPUBackend.cpp
     ocldbg/backends/cpu/WIContextExtractor.cpp
     ocldbg/backends/cpu/WorkGroupTracker.cpp
+    ocldbg/backends/cpu/CPUABI.cpp
+    ocldbg/backends/cpu/aarch64/AArch64CPUABI.cpp
     ocldbg/backends/cpu/x86_64/X86_64CPUABI.cpp
     ocldbg/backends/oclgrind/OclgrindBackend.cpp
     ocldbg/backends/oclgrind/OclgrindSession.cpp

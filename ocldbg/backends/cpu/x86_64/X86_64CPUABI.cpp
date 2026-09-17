@@ -1,146 +1,26 @@
 #include "X86_64CPUABI.h"
 
 #include <array>
-#include <lldb/API/SBValue.h>
-#include <string>
 
 namespace ocldbg {
 
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-uint64_t X86_64CPUABI::read_reg(lldb::SBFrame frame, const char *reg64, const char *reg32,
-                                bool &found) {
-    if (!frame.IsValid()) {
-        found = false;
-        return 0;
-    }
-
-    if (reg64 != nullptr) {
-        lldb::SBValue val = frame.FindRegister(reg64);
-        if (val.IsValid()) {
-            found = true;
-            return val.GetValueAsUnsigned(0);
-        }
-    }
-
-    if (reg32 != nullptr) {
-        lldb::SBValue val = frame.FindRegister(reg32);
-        if (val.IsValid()) {
-            found = true;
-            return val.GetValueAsUnsigned(0);
-        }
-    }
-
-    found = false;
-    return 0;
+const CPUABI::ArgRegisters &X86_64CPUABI::arg_registers() const {
+    // System V AMD64 passes the first six integer or pointer arguments in these
+    // registers, in this order.
+    static constexpr ArgRegisters kRegisters{
+        .reg64 = {"rdi", "rsi", "rdx", "rcx", "r8", "r9"},
+        .reg32 = {"edi", "esi", "edx", "ecx", "r8d", "r9d"},
+    };
+    return kRegisters;
 }
 
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-bool X86_64CPUABI::read_enqueue_ndrange(lldb::SBProcess process, lldb::SBFrame frame,
-                                        Size3 &out_global, Size3 &out_local) {
-    if (!process.IsValid() || !frame.IsValid()) {
-        return false;
-    }
-
-    // In System V AMD64 ABI for clEnqueueNDRangeKernel:
-    // arg 3 (work_dim)           -> %rdx / %edx
-    // arg 4 (global_work_offset) -> %rcx
-    // arg 5 (global_work_size)   -> %r8
-    // arg 6 (local_work_size)    -> %r9
-    bool found = false;
-    uint64_t work_dim = read_reg(frame, "rdx", "edx", found);
-    if (!found || work_dim == 0) {
-        work_dim = 1;
-    }
-
-    uint64_t g_ptr = read_reg(frame, "r8", nullptr, found);
-    if (!found || g_ptr == 0) {
-        return false;
-    }
-
-    uint64_t l_ptr = read_reg(frame, "r9", nullptr, found);
-
-    lldb::SBError err;
-    constexpr uint64_t kPtrSize = sizeof(size_t);
-    out_global.x = process.ReadUnsignedFromMemory(g_ptr, kPtrSize, err);
-    out_global.y =
-        (work_dim > 1) ? process.ReadUnsignedFromMemory(g_ptr + kPtrSize, kPtrSize, err) : 1;
-    out_global.z =
-        (work_dim > 2) ? process.ReadUnsignedFromMemory(g_ptr + (2 * kPtrSize), kPtrSize, err) : 1;
-
-    if (l_ptr != 0) {
-        out_local.x = process.ReadUnsignedFromMemory(l_ptr, kPtrSize, err);
-        out_local.y =
-            (work_dim > 1) ? process.ReadUnsignedFromMemory(l_ptr + kPtrSize, kPtrSize, err) : 1;
-        out_local.z = (work_dim > 2)
-                          ? process.ReadUnsignedFromMemory(l_ptr + (2 * kPtrSize), kPtrSize, err)
-                          : 1;
-    } else {
-        out_local = {.x = 1, .y = 1, .z = 1};
-    }
-
-    return true;
-}
-
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-bool X86_64CPUABI::read_enqueue_kernel_name(lldb::SBProcess process, lldb::SBFrame frame,
-                                            std::string &out_kernel_name) {
-    if (!process.IsValid() || !frame.IsValid()) {
-        return false;
-    }
-    bool found = false;
-    uint64_t kernel_ptr = read_reg(frame, "rsi", nullptr, found);
-    if (!found || kernel_ptr == 0) {
-        return false;
-    }
-
-    std::string expr =
-        std::format("char __kname[128] = {{0}}; "
-                    "((int(*)(void*, int, unsigned long, void*, void*))clGetKernelInfo)"
-                    "((void*){:#x}, 0x1190, 128, __kname, (void*)0); __kname",
-                    kernel_ptr);
-    lldb::SBValue val = frame.EvaluateExpression(expr.c_str());
-    if (val.IsValid() && val.GetError().Success()) {
-        const char *summary = val.GetSummary();
-        if (summary != nullptr) {
-            std::string s = summary;
-            if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
-                s = s.substr(1, s.size() - 2);
-            }
-            if (!s.empty()) {
-                out_kernel_name = s;
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-// NOLINTNEXTLINE(performance-unnecessary-value-param)
-bool X86_64CPUABI::read_workgroup_id(lldb::SBFrame frame, Size3 &out_wg) {
-    if (!frame.IsValid()) {
-        return false;
-    }
-
-    // In System V AMD64 ABI:
-    // arg 2 (group_x) -> %rdx / %edx
-    // arg 3 (group_y) -> %rcx / %ecx
-    // arg 4 (group_z) -> %r8  / %r8d
-    bool found_x = false;
-    bool found_y = false;
-    bool found_z = false;
-
-    uint64_t gx = read_reg(frame, "rdx", "edx", found_x);
-    uint64_t gy = read_reg(frame, "rcx", "ecx", found_y);
-    uint64_t gz = read_reg(frame, "r8", "r8d", found_z);
-
-    if (!found_x) {
-        return false;
-    }
-
-    out_wg.x = gx;
-    out_wg.y = (found_y && gy < 0x100000) ? gy : 0;
-    out_wg.z = (found_z && gz < 0x100000) ? gz : 0;
-    return true;
+const char *X86_64CPUABI::dwarf_register_name(unsigned dwarf_regnum) const {
+    // The System V AMD64 psABI fixes this numbering; it is not the argument order.
+    static constexpr std::array<const char *, 32> kRegisters{
+        "rax",  "rdx",  "rcx",  "rbx",  "rsi",  "rdi",   "rbp",   "rsp",   "r8",    "r9",   "r10",
+        "r11",  "r12",  "r13",  "r14",  "r15",  "rip",   "xmm0",  "xmm1",  "xmm2",  "xmm3", "xmm4",
+        "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14"};
+    return dwarf_regnum < kRegisters.size() ? kRegisters.at(dwarf_regnum) : nullptr;
 }
 
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
@@ -150,67 +30,26 @@ bool X86_64CPUABI::read_local_id(lldb::SBFrame frame, const Size3 &local_size,
         return false;
     }
 
-    // 1. Try DWARF local variables first
-    constexpr std::array<const char *, 4> local_var_candidates{"_local_id_x", "local_id_x",
-                                                               "local_id", "_local_id"};
-    for (const char *var_name : local_var_candidates) {
-        lldb::SBValue v = frame.FindVariable(var_name);
-        if (v.IsValid()) {
-            out_local_id.x = v.GetValueAsUnsigned(0);
-            out_local_id.y = 0;
-            out_local_id.z = 0;
+    if (read_local_id_from_variables(frame, local_size, out_local_id)) {
+        return true;
+    }
+
+    // In pocl's lowered workgroup loop, complex loops that spill through context
+    // allocas keep the induction variable in %r10, and basic loops keep it in %rsi.
+    constexpr std::array<std::array<const char *, 2>, 2> induction_registers{
+        {{"r10", "r10d"}, {"rsi", "esi"}}};
+    for (const auto &candidate : induction_registers) {
+        bool found = false;
+        uint64_t value = read_register(frame, candidate.at(0), candidate.at(1), found);
+        if (found && (local_size.x == 0 || value < local_size.x)) {
+            out_local_id = {.x = value, .y = 0, .z = 0};
             return true;
         }
     }
 
-    // 2. Check global_id variable in DWARF: local_id.x = global_id % local_size.x
-    constexpr std::array<const char *, 4> global_var_candidates{"gx", "global_id_x", "global_id",
-                                                                "_global_id_x"};
-    for (const char *var_name : global_var_candidates) {
-        lldb::SBValue v = frame.FindVariable(var_name);
-        if (v.IsValid()) {
-            uint64_t gval = v.GetValueAsUnsigned(0);
-            size_t lsz = (local_size.x > 0) ? local_size.x : 1;
-            out_local_id.x = gval % lsz;
-            out_local_id.y = 0;
-            out_local_id.z = 0;
-            return true;
-        }
-    }
-
-    // 3. Check loop induction registers for x86_64
-    // In pocl's lowered workgroup loop:
-    // - Complex loops (like reduce_sum with context allocas) use %r10 / %r10d as the induction
-    // variable
-    // - Basic loops (like vec_add) use %rsi / %esi as the induction variable
-    bool found_reg = false;
-    uint64_t r10_val = read_reg(frame, "r10", "r10d", found_reg);
-    if (found_reg && (local_size.x == 0 || r10_val < local_size.x)) {
-        out_local_id.x = r10_val;
-        out_local_id.y = 0;
-        out_local_id.z = 0;
-        return true;
-    }
-
-    uint64_t rsi_val = read_reg(frame, "rsi", "esi", found_reg);
-    if (found_reg && (local_size.x == 0 || rsi_val < local_size.x)) {
-        out_local_id.x = rsi_val;
-        out_local_id.y = 0;
-        out_local_id.z = 0;
-        return true;
-    }
-
-    // 4. Fallback at workgroup entry point: initial local_id is (0,0,0)
+    // At the workgroup entry point the loop has not started yet.
     out_local_id = {.x = 0, .y = 0, .z = 0};
     return true;
-}
-
-std::unique_ptr<CPUABI> CPUABI::create_host_abi() {
-#if defined(__x86_64__) || defined(_M_X64)
-    return std::make_unique<X86_64CPUABI>();
-#else
-    return std::make_unique<X86_64CPUABI>();
-#endif
 }
 
 } // namespace ocldbg

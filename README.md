@@ -7,7 +7,7 @@ A source-level debugger for OpenCL kernels running on CPU device backends (`pocl
 ## 1. Prerequisites & Dependencies
 
 ### System Requirements
-- Linux (x86_64)
+- Linux (x86_64 or AArch64)
 - CMake 3.20+
 - Modern C++20 compiler (`gcc` 11+ or `clang` 14+)
 - OpenCL 1.2+ ICD loader and development headers (`ocl-icd`, `opencl-headers`)

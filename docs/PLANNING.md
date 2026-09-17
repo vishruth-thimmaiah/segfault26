@@ -150,7 +150,7 @@ OCLVariableResolver
     |     +-- DW_AT_type, scopes
     |
     +-- location_backend (per-target)
-          +-- CPU:    LLDB SBFrame / SBValue (ptrace + DWARF exprs on x86 regs)
+          +-- CPU:    LLDB SBFrame / SBValue (ptrace + DWARF exprs on host regs)
           +-- AMD:    ROCdbgapi wave register read + AMDGPU DWARF reg map
           +-- Intel:  zeDebugReadRegisters + Intel EU DWARF reg map
           +-- NVIDIA: cuda-gdb MI register read + PTX DWARF reg map
