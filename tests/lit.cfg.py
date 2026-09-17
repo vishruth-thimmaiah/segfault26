@@ -6,8 +6,11 @@ config.name = "segfault26"
 config.test_format = lit.formats.ShTest(True)
 config.suffixes = [".cl", ".ll", ".test", ".cpp"]
 
-# Timeout of 10s per test
-lit_config.maxIndividualTestTime = 10
+# Per-test timeout, to catch a hang rather than to budget the work. It covers
+# every RUN line in a test: workgroup_bounds.cl drives six debuggee launches and
+# takes about 20s here with a cold pocl cache, so the limit leaves room for a
+# slower runner. Needs the psutil module, without which lit refuses to start.
+lit_config.maxIndividualTestTime = 120
 
 config.test_source_root = os.path.dirname(__file__)
 config.test_exec_root = getattr(
