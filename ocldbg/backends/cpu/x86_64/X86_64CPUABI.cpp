@@ -43,7 +43,8 @@ bool X86_64CPUABI::read_local_id(lldb::SBFrame frame, const Size3 &local_size,
         uint64_t value = read_register(frame, candidate.at(0), candidate.at(1), found);
         if (found && (local_size.x == 0 || value < local_size.x)) {
             out_local_id = {.x = value, .y = 0, .z = 0};
-            return true;
+            // The induction variable names the x axis only.
+            return work_group_is_one_dimensional(local_size);
         }
     }
 

@@ -199,7 +199,7 @@ bool CPUABI::read_local_id_from_variables(lldb::SBFrame frame, const Size3 &loca
         if (v.IsValid()) {
             size_t lsz = (local_size.x > 0) ? local_size.x : 1;
             out_local_id = {.x = v.GetValueAsUnsigned(0) % lsz, .y = 0, .z = 0};
-            return true;
+            return work_group_is_one_dimensional(local_size);
         }
     }
 
