@@ -176,13 +176,41 @@ Pairing by order is what made the split visible.
 
 Re-running it against the fixed code is how the third fix was confirmed from
 the outside: `avgblur_vert`, which the pocl backend had never once stopped in,
-pairs three stops against Oclgrind's three.
+pairs three stops against Oclgrind's three. Every case that used to go unpaired
+now pairs, and the comparable readings double.
 
-| case | before | after |
+| case, Oclgrind / pocl stops | before | after |
 | --- | --- | --- |
 | `avgblur_horiz` | 3 / 3 | 3 / 3 |
 | `avgblur_vert` | 3 / **0** | 3 / **3** |
 | `sobel_global` | 3 / 3 | 3 / 3 |
+| `dilation_global` | 3 / 3 | 3 / 3 |
+| `transpose` | 3 / 3 | 3 / 3 |
+| `unsharp_global` | 0 / 3 | 0 / 3 |
+| **comparable readings** | **9** | **18** |
+| **agreed** | 9 | 16 |
+| **differed** | 0 | 2 |
+
+The two differences are worth reading before taking 16/18 as a defect rate.
+One is not a difference at all: 1.02745 against 1.027451, the same value to six
+significant figures, printed to different widths by the two backends and split
+by a comparator that rounded to a fixed place. That is fixed -- it compares
+with a relative tolerance now -- and it is a reminder that a measuring
+instrument deserves the same scepticism as the thing measured.
+
+The other, 1.3098 against 1.313726, is a genuine difference of three parts in a
+thousand, and the method cannot say whose it is. Pairing by order assumes both
+backends walk the work-items in the same sequence. That assumption was
+checkable while both named the work-item; now that the pocl backend honestly
+reports `WI(?)` where it cannot, there is nothing to check it against, and a
+stop-order mismatch is indistinguishable from a wrong value.
+
+That also drains the meaning from the label figure, which reads 1 of 15 after
+the fixes against 4 of 12 before. It has not got worse: one side has stopped
+claiming an answer it did not have, so the two no longer agree by construction.
+The honest reading is that label agreement is no longer a measurement, and the
+work-item identity of a pocl stop is now an open question rather than a wrong
+answer.
 
 The harness needed a change of its own to read those runs. Its parser matched
 `WI(` followed by three numbers, so once a backend began reporting `WI(?)` for

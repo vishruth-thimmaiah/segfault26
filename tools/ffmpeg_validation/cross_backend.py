@@ -9,7 +9,7 @@ nothing else, so agreement is evidence neither is inventing values.
 Stops are paired by order, not by work-item label, because whether the label is
 right is itself one of the things under test.
 """
-import json, os, pathlib, re, subprocess, sys
+import json, math, os, pathlib, re, subprocess, sys
 
 SP = pathlib.Path(__file__).parent
 OCLDBG = "/home/deval/segfault26/build/ocldbg"
@@ -54,12 +54,25 @@ def stops(text):
             cur[1][m.group(1)] = m.group(2).strip()
     return out
 
-def norm(v):
-    """Numeric comparison where possible: the backends format floats differently."""
+def nums_of(v):
+    """The numbers in a printed value, or None when there is no value."""
     if v is None or "unavailable" in v:
         return None
-    nums = re.findall(r"-?\d+\.?\d*(?:e[-+]?\d+)?", v)
-    return tuple(round(float(x), 4) for x in nums) if nums else v.strip()
+    found = re.findall(r"-?\d+\.?\d*(?:e[-+]?\d+)?", v)
+    return [float(x) for x in found] if found else v.strip()
+
+def same(a, b):
+    """The backends print floats to different widths, so 1.02745 and 1.027451 are
+    one value shown two ways. Rounding to a fixed place puts a pair like that on
+    either side of a boundary and calls it a disagreement, so compare with a
+    relative tolerance instead."""
+    if a is None or b is None:
+        return None
+    if isinstance(a, str) or isinstance(b, str):
+        return a == b
+    if len(a) != len(b):
+        return False
+    return all(math.isclose(x, y, rel_tol=1e-5, abs_tol=1e-9) for x, y in zip(a, b))
 
 def main():
     cases = json.loads(pathlib.Path(sys.argv[1]).read_text())
@@ -73,10 +86,10 @@ def main():
             lbl_ok, lbl_bad = (lbl_ok+1, lbl_bad) if la == lb else (lbl_ok, lbl_bad+1)
             for var in c["prints"]:
                 x, y = va.get(var), vb.get(var)
-                nx, ny = norm(x), norm(y)
-                if nx is None or ny is None:
+                verdict_same = same(nums_of(x), nums_of(y))
+                if verdict_same is None:
                     one_only += 1; verdict = "one backend only"
-                elif nx == ny:
+                elif verdict_same:
                     agree += 1; verdict = "agree"
                 else:
                     differ += 1; verdict = "DIFFER"
