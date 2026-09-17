@@ -318,6 +318,7 @@ void OclgrindBackend::resume_with(std::string_view command) {
         .global_id = impl_->exec_ctx.global_id,
         .local_id = {.x = fields[4], .y = fields[5], .z = fields[6]},
         .group_id = {.x = fields[7], .y = fields[8], .z = fields[9]},
+        .location = {.file = {}, .line = impl_->stop_line},
         .exec_ctx = &impl_->exec_ctx,
     };
     impl_->halted = true;
@@ -350,6 +351,7 @@ bool OclgrindBackend::select_work_item(const Size3 &global_id, OCLWorkItem &out)
         .global_id = global_id,
         .local_id = {.x = fields[0], .y = fields[1], .z = fields[2]},
         .group_id = {.x = fields[3], .y = fields[4], .z = fields[5]},
+        .location = {.file = {}, .line = impl_->stop_line},
         .exec_ctx = &impl_->exec_ctx,
     };
     impl_->stopped = out;
@@ -383,10 +385,6 @@ size_t OclgrindBackend::read_global_memory(HostAddress addr, void *buf, size_t l
 
 bool OclgrindBackend::halted() const {
     return impl_->halted;
-}
-
-unsigned OclgrindBackend::last_stop_line() const {
-    return impl_->stop_line;
 }
 
 VarValue OclgrindLocationBackend::evaluate(const VarInfo &var, ExecCtxHandle exec_ctx) {
