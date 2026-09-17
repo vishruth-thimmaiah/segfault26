@@ -47,9 +47,9 @@ bool X86_64CPUABI::read_local_id(lldb::SBFrame frame, const Size3 &local_size,
         }
     }
 
-    // At the workgroup entry point the loop has not started yet.
-    out_local_id = {.x = 0, .y = 0, .z = 0};
-    return true;
+    // Nothing here identifies the work-item. Reporting the origin would make an
+    // unknown look like a fact, and the caller renders a failure as WI(?).
+    return false;
 }
 
 } // namespace ocldbg

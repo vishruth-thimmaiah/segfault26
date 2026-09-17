@@ -240,7 +240,15 @@ bool handle_line_breakpoint(DebuggerContext &dbg, lldb::SBProcess &process, lldb
     }
     ++line_hit_count;
     auto wi = dbg.resolve_stopped_work_item(*hit_tid);
-    std::vector<VarValue> vars = wi ? dbg.inspect_variables(*wi) : std::vector<VarValue>{};
+    std::vector<VarValue> vars;
+    if (wi) {
+        vars = dbg.inspect_variables(*wi);
+    } else {
+        // Which work-item this is could not be established, but the frame's
+        // variables are readable and are what the stop was for.
+        process.SetSelectedThreadByID(*hit_tid);
+        vars = dbg.inspect_current_frame_variables();
+    }
     print_breakpoint_hit(break_at, wi, line_hit_count, vars);
 
     if (break_for > 0 && line_hit_count >= break_for) {
