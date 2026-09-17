@@ -174,6 +174,23 @@ A first version of this comparison reported a spurious disagreement because it
 paired stops by work-item label, which is precisely the thing that was broken.
 Pairing by order is what made the split visible.
 
+Re-running it against the fixed code is how the third fix was confirmed from
+the outside: `avgblur_vert`, which the pocl backend had never once stopped in,
+pairs three stops against Oclgrind's three.
+
+| case | before | after |
+| --- | --- | --- |
+| `avgblur_horiz` | 3 / 3 | 3 / 3 |
+| `avgblur_vert` | 3 / **0** | 3 / **3** |
+| `sobel_global` | 3 / 3 | 3 / 3 |
+
+The harness needed a change of its own to read those runs. Its parser matched
+`WI(` followed by three numbers, so once a backend began reporting `WI(?)` for
+a work-item it could not identify -- the first fix -- every stop became
+invisible to it and the comparison silently found nothing. A measuring
+instrument that assumes the old answer is worth checking after changing what is
+measured.
+
 ### What the differential found
 
 It was not a formality. It turned up three defects in the pocl backend, none of
