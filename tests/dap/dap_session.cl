@@ -1,4 +1,4 @@
-// RUN: rm -rf %t.kcache && env POCL_CACHE_DIR=%t.kcache POCL_CPU_MAX_CU_COUNT=1 POCL_CPU_NUM_WORKERS=1 python3 %S/dap_driver.py %ocldbg %test_host_runner %s reduce_sum | %FileCheck %s
+// RUN: rm -rf %t.kcache && env POCL_CACHE_DIR=%t.kcache POCL_CPU_MAX_CU_COUNT=1 POCL_CPU_NUM_WORKERS=1 python3 %S/dap_driver.py %ocldbg %test_host_runner %s reduce_sum | %FileCheck %s --check-prefixes=CHECK%if x86_64 %{,CHECK-PARAM%}
 // FLAGS: -k reduce_sum -g_size 16 -l_size 4 --arg-buf 80 --arg-buf 16 --arg-int 4
 
 __kernel void reduce_sum(__global const float *src,
@@ -24,7 +24,9 @@ __kernel void reduce_sum(__global const float *src,
 // CHECK: [dap] stackTrace: line 13
 // CHECK: [dap] scopes: __local
 // CHECK: [dap] var: acc = 0.000000
-// CHECK: [dap] var: n = 4
+// pocl gives the kernel's parameters no debug info on AArch64, so n can only
+// be read on x86_64. Everything else here works on both.
+// CHECK-PARAM: [dap] var: n = 4
 // CHECK: [dap] selectWorkItem: WI(0,0,0) grp(0,0,0)
 // CHECK: [dap] continue
 // CHECK: [dap] stopped at breakpoint
