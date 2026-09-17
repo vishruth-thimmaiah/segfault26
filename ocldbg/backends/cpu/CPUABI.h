@@ -24,7 +24,7 @@ public:
     /// Extract global-size and local-size dimensions from the arguments passed
     /// to clEnqueueNDRangeKernel at its call site.
     bool read_enqueue_ndrange(lldb::SBProcess process, lldb::SBFrame frame, Size3 &out_global,
-                              Size3 &out_local);
+                              Size3 &out_local, size_t *out_work_dim = nullptr);
 
     /// Extract the kernel name passed to clEnqueueNDRangeKernel at its call site.
     bool read_enqueue_kernel_name(lldb::SBProcess process, lldb::SBFrame frame,

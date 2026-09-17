@@ -17,6 +17,10 @@
                 {
                     "name": "POCL_CACHE_DIR",
                     "value": "${workspaceFolder}/build/.pocl_cache"
+                },
+                {
+                    "name": "POCL_CPU_NUM_WORKERS",
+                    "value": "${input:numThreads}"
                 }
             ]
         },
@@ -30,6 +34,14 @@
             "stopOnEntry": false,
             "preLaunchTask": "Build ocldbg",
             "env": {}
+        }
+    ],
+    "inputs": [
+        {
+            "id": "numThreads",
+            "type": "promptString",
+            "description": "Number of worker threads (POCL_CPU_NUM_WORKERS)",
+            "default": "4"
         }
     ]
 }

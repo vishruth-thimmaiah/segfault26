@@ -84,7 +84,7 @@ def main():
     r_st = read_msg(p)
     frames = r_st.get("body", {}).get("stackFrames", [])
     if frames:
-        print(f"[dap] stackTrace: line {frames[0].get('line')}")
+        print(f"[dap] stackTrace: {frames[0].get('name')} at line {frames[0].get('line')}")
 
     # 7. Scopes
     send_msg(p, {"seq": 7, "type": "request", "command": "scopes", "arguments": {"frameId": 1}})

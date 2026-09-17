@@ -37,6 +37,7 @@ struct WorkItemMapping {
 /// Summary of an inferred OpenCL kernel launch.
 struct KernelLaunchInfo {
     std::string kernel_name;
+    size_t work_dim = 1;
     Size3 global_size{1, 1, 1};
     Size3 local_size{1, 1, 1};
     Size3 num_groups{1, 1, 1};

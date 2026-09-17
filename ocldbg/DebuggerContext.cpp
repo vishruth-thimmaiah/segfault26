@@ -382,9 +382,10 @@ bool DebuggerContext::infer_kernel_launch() {
 
     Size3 global_size{.x = 1, .y = 1, .z = 1};
     Size3 local_size{.x = 1, .y = 1, .z = 1};
+    size_t work_dim = 1;
 
-    if (!impl_->abi ||
-        !impl_->abi->read_enqueue_ndrange(impl_->process, frame, global_size, local_size)) {
+    if (!impl_->abi || !impl_->abi->read_enqueue_ndrange(impl_->process, frame, global_size,
+                                                         local_size, &work_dim)) {
         return false;
     }
 
@@ -403,6 +404,7 @@ bool DebuggerContext::infer_kernel_launch() {
 
     KernelLaunchInfo info{
         .kernel_name = impl_->kernel_name,
+        .work_dim = work_dim,
         .global_size = global_size,
         .local_size = local_size,
         .num_groups = num_wg,
@@ -684,6 +686,9 @@ bool DebuggerContext::select_work_item(const Size3 &global_id) {
     }
 
     OCLWorkItem wi;
+    if (impl_->launch_info.has_value() && impl_->launch_info->work_dim > 0) {
+        wi.work_dim = impl_->launch_info->work_dim;
+    }
     wi.global_id = global_id;
     wi.group_id = target_wg;
     wi.local_id = target_local;
@@ -716,8 +721,10 @@ std::vector<OCLWorkItem> DebuggerContext::list_stopped_work_items() const {
     }
 
     size_t lx = 1;
+    size_t work_dim = 1;
     if (impl_->launch_info.has_value() && impl_->launch_info->local_size.x > 0) {
         lx = impl_->launch_info->local_size.x;
+        work_dim = impl_->launch_info->work_dim;
     } else {
         lx = 4;
     }
@@ -734,6 +741,7 @@ std::vector<OCLWorkItem> DebuggerContext::list_stopped_work_items() const {
         }
 
         OCLWorkItem wi;
+        wi.work_dim = work_dim;
         Size3 wg_id;
         bool has_wg = (impl_->abi != nullptr) && impl_->abi->read_workgroup_id(f, wg_id);
         if (has_wg) {
@@ -962,6 +970,7 @@ std::optional<OCLWorkItem> DebuggerContext::resolve_stopped_work_item(uint64_t t
         WIContextExtractor extractor;
         OCLWorkItem item;
         if (extractor.extract_from_thread(t, wg_id, local_size, item)) {
+            item.work_dim = impl_->launch_info->work_dim;
             return item;
         }
         break;

@@ -20,14 +20,14 @@ __kernel void reduce_sum(__global const float *src,
 // CHECK: [dap] launched
 // CHECK: [dap] breakpoints set: line 13
 // CHECK: [dap] stopped at breakpoint
-// CHECK: [dap] threads: WI(0,0,0) grp(0,0,0)
-// CHECK: [dap] stackTrace: line 13
+// CHECK: [dap] threads: Work-Item (0) [Work-Group (0)]
+// CHECK: [dap] stackTrace: reduce_sum at line 13
 // CHECK: [dap] scopes: __local
 // CHECK: [dap] var: acc = 0.000000
 // pocl gives the kernel's parameters no debug info on AArch64, so n can only
 // be read on x86_64. Everything else here works on both.
 // CHECK-PARAM: [dap] var: n = 4
-// CHECK: [dap] selectWorkItem: WI(0,0,0) grp(0,0,0)
+// CHECK: [dap] selectWorkItem: Work-Item (0) [Work-Group (0)]
 // CHECK: [dap] continue
 // CHECK: [dap] stopped at breakpoint
 // CHECK: [dap] var: acc = 1.000000

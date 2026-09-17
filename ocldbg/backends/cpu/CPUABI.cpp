@@ -61,7 +61,7 @@ uint64_t CPUABI::read_register(lldb::SBFrame frame, const char *reg64, const cha
 
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
 bool CPUABI::read_enqueue_ndrange(lldb::SBProcess process, lldb::SBFrame frame, Size3 &out_global,
-                                  Size3 &out_local) {
+                                  Size3 &out_local, size_t *out_work_dim) {
     if (!process.IsValid() || !frame.IsValid()) {
         return false;
     }
@@ -99,6 +99,10 @@ bool CPUABI::read_enqueue_ndrange(lldb::SBProcess process, lldb::SBFrame frame, 
                           : 1;
     } else {
         out_local = {.x = 1, .y = 1, .z = 1};
+    }
+
+    if (out_work_dim != nullptr) {
+        *out_work_dim = static_cast<size_t>(work_dim);
     }
 
     return true;
