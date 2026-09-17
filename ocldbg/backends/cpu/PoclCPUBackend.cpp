@@ -64,11 +64,6 @@ VarValue eval_from_sbvalue(lldb::SBValue val, const VarInfo &var) {
     return result;
 }
 
-constexpr std::array<const char *, 32> kX86Regs = {
-    "rax",  "rdx",  "rcx",  "rbx",  "rsi",  "rdi",   "rbp",   "rsp",   "r8",    "r9",   "r10",
-    "r11",  "r12",  "r13",  "r14",  "r15",  "rip",   "xmm0",  "xmm1",  "xmm2",  "xmm3", "xmm4",
-    "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14"};
-
 int64_t decode_sleb128(const uint8_t *&p, const uint8_t *end) {
     int64_t result = 0;
     int shift = 0;
@@ -142,18 +137,19 @@ VarValue eval_from_memory(const lldb::SBFrame &frame, lldb::addr_t addr, const V
     return result;
 }
 
-VarValue eval_from_register(lldb::SBFrame frame, uint8_t op, const VarInfo &var) {
+VarValue eval_from_register(lldb::SBFrame frame, const CPUABI &abi, uint64_t dwarf_regnum,
+                            const VarInfo &var) {
     VarValue result;
     result.name = var.name;
     result.type_name = var.type_name;
     result.address_space = var.address_space;
 
-    uint8_t reg_idx = op - 0x50;
-    if (reg_idx >= kX86Regs.size()) {
+    const char *reg_name = abi.dwarf_register_name(dwarf_regnum);
+    if (reg_name == nullptr) {
         return result;
     }
 
-    lldb::SBValue reg_val = frame.FindRegister(kX86Regs[reg_idx]);
+    lldb::SBValue reg_val = frame.FindRegister(reg_name);
     if (!reg_val.IsValid()) {
         return result;
     }
@@ -384,13 +380,13 @@ static VarValue eval_const(uint8_t op, const std::vector<uint8_t> &expr, const V
     return result;
 }
 
-static VarValue eval_breg(lldb::SBFrame &frame, uint8_t op, const std::vector<uint8_t> &expr,
-                          const VarInfo &var) {
-    uint8_t reg_idx = op - 0x70;
-    if (reg_idx >= kX86Regs.size()) {
+static VarValue eval_breg(lldb::SBFrame &frame, const CPUABI &abi, uint8_t op,
+                          const std::vector<uint8_t> &expr, const VarInfo &var) {
+    const char *reg_name = abi.dwarf_register_name(op - 0x70);
+    if (reg_name == nullptr) {
         return {};
     }
-    lldb::SBValue reg_val = frame.FindRegister(kX86Regs[reg_idx]);
+    lldb::SBValue reg_val = frame.FindRegister(reg_name);
     if (!reg_val.IsValid()) {
         return {};
     }
@@ -428,14 +424,19 @@ static VarValue eval_fbreg(lldb::SBFrame &frame, const std::vector<uint8_t> &exp
     return eval_from_memory(frame, fb + offset, var);
 }
 
-static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const VarInfo &var) {
+static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const CPUABI &abi, const VarInfo &var) {
     const auto &expr = var.dwarf_location_expr;
     if (expr.empty()) {
         return {};
     }
     uint8_t op = expr[0];
     if (op >= 0x50 && op <= 0x6f) { // DW_OP_reg0..DW_OP_reg31
-        return eval_from_register(frame, op, var);
+        return eval_from_register(frame, abi, op - 0x50, var);
+    }
+    if (op == 0x90) { // DW_OP_regx
+        const uint8_t *p = expr.data() + 1;
+        uint64_t regnum = decode_uleb128(p, expr.data() + expr.size());
+        return eval_from_register(frame, abi, regnum, var);
     }
     if (op == 0x9e) { // DW_OP_implicit_value
         return eval_implicit_value(expr, var);
@@ -444,7 +445,7 @@ static VarValue eval_from_dwarf_expr(lldb::SBFrame &frame, const VarInfo &var) {
         return eval_const(op, expr, var);
     }
     if (op >= 0x70 && op <= 0x8f) { // DW_OP_breg0..DW_OP_breg31
-        return eval_breg(frame, op, expr, var);
+        return eval_breg(frame, abi, op, expr, var);
     }
     if (op == 0x91) { // DW_OP_fbreg
         return eval_fbreg(frame, expr, var);
@@ -490,8 +491,8 @@ VarValue CPULocationBackend::evaluate(const VarInfo &var, ExecCtxHandle exec_ctx
         }
     }
 
-    if (!var.dwarf_location_expr.empty()) {
-        VarValue dwarf_res = eval_from_dwarf_expr(frame, var);
+    if (!var.dwarf_location_expr.empty() && abi_) {
+        VarValue dwarf_res = eval_from_dwarf_expr(frame, *abi_, var);
         if (dwarf_res.available) {
             s_param_cache[var.name] = dwarf_res;
             return dwarf_res;

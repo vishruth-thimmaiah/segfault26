@@ -1,4 +1,4 @@
-// RUN: env POCL_CACHE_DIR=%t.kcache POCL_CPU_MAX_CU_COUNT=1 POCL_CPU_NUM_WORKERS=1 %ocldbg -b -o "ocl break ocl_break.cl:11" -o "ocl break list" -o "run" -o "ocl p acc" -o "ocl print n" -o "ocl vars" -o "c" -o "ocl p acc" -o "c" -o "c" -o "c" -o "c" -o "ocl p acc" -o "ocl break delete 1" -o "c" %test_host_runner %s reduce_sum | %FileCheck %s
+// RUN: rm -rf %t.kcache && env POCL_CACHE_DIR=%t.kcache POCL_CPU_MAX_CU_COUNT=1 POCL_CPU_NUM_WORKERS=1 %ocldbg -b -o "ocl break ocl_break.cl:11" -o "ocl break list" -o "run" -o "ocl p acc" -o "ocl print n" -o "ocl vars" -o "c" -o "ocl p acc" -o "c" -o "c" -o "c" -o "c" -o "ocl p acc" -o "ocl break delete 1" -o "c" %test_host_runner %s reduce_sum | %FileCheck %s
 // FLAGS: -k reduce_sum -g_size 16 -l_size 4 --arg-buf 80 --arg-buf 16 --arg-int 4
 __kernel void reduce_sum(__global const float *src,
                          __global float       *dst,
@@ -48,3 +48,8 @@ __kernel void reduce_sum(__global const float *src,
 // CHECK: (ocldbg) c
 // CHECK: Process {{[0-9]+}} resuming
 // CHECK: Process {{[0-9]+}} exited with status = 0
+
+// Kept to x86_64: pocl emits debug info for a different subset of a kernel's
+// variables on each target. For this kernel its AArch64 output describes acc and i only, with
+// nothing for the src, dst and n parameters this test reads.
+// REQUIRES: x86_64

@@ -52,7 +52,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.local/oclgrind
-          key: oclgrind-${{ env.OCLGRIND_COMMIT }}-llvm22-${{ runner.os }}
+          key: oclgrind-${{ env.OCLGRIND_COMMIT }}-llvm22-${{ runner.arch }}
 
       - name: Build Oclgrind
         if: steps.oclgrind-cache.outputs.cache-hit != 'true'
@@ -89,8 +89,19 @@ jobs:
           cmake --build build --target tidy
 
   build:
-    name: Build & Test (Ubuntu)
-    runs-on: ubuntu-latest
+    name: Build & Test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+
+    # The CPU backend decodes host registers, so its ABI layer is only exercised by
+    # running on the architecture it implements.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
 
     steps:
       - name: Checkout repository
@@ -124,13 +135,16 @@ jobs:
 
       - name: Cache Oclgrind
         id: oclgrind-cache
+        if: matrix.arch == 'x86_64'
         uses: actions/cache@v4
         with:
           path: ~/.local/oclgrind
-          key: oclgrind-${{ env.OCLGRIND_COMMIT }}-llvm22-${{ runner.os }}
+          key: oclgrind-${{ env.OCLGRIND_COMMIT }}-llvm22-${{ runner.arch }}
 
+      # Oclgrind interprets LLVM IR and shares no code with the CPU ABI layer, so it
+      # is built once rather than on every architecture in the matrix.
       - name: Build Oclgrind
-        if: steps.oclgrind-cache.outputs.cache-hit != 'true'
+        if: matrix.arch == 'x86_64' && steps.oclgrind-cache.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/jrprice/Oclgrind.git oclgrind-src
           git -C oclgrind-src checkout ${OCLGRIND_COMMIT}

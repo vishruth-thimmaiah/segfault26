@@ -436,18 +436,28 @@ bool DebuggerContext::set_workgroup_breakpoint(const std::string &kernel_name) {
         }
     }
 
-    // Fall back to direct symbol name if kernel_name is specified.
+    // Both fallbacks below resolve only once pocl dlopens the kernel module, which
+    // it does after compiling the kernel, so having no location yet is not failure.
+    //
+    // Prologue skipping has to be off for them. pocl inlines the kernel body into
+    // the work-group function, so its first line-table entry is already inside the
+    // per-work-item loop; a breakpoint placed there fires once per work-item rather
+    // than once per work-group, and the group ids have left their argument
+    // registers by then. The resolver captures this setting when the breakpoint is
+    // created, so restoring it does not affect that later resolution.
+    const char *instance = impl_->debugger.GetInstanceName();
+    lldb::SBDebugger::SetInternalVariable("target.skip-prologue", "false", instance);
+
     if (!impl_->kernel_name.empty()) {
         std::string sym = std::format("_pocl_kernel_{}_workgroup", impl_->kernel_name);
         impl_->wg_breakpoint = impl_->target.BreakpointCreateByName(sym.c_str());
-        if (impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0) {
-            return true;
-        }
+    } else {
+        // Without a kernel name, match any work-group function pocl emits.
+        impl_->wg_breakpoint = impl_->target.BreakpointCreateByRegex("_pocl_kernel_.*_workgroup");
     }
 
-    // Match any PoCL kernel workgroup function
-    impl_->wg_breakpoint = impl_->target.BreakpointCreateByRegex("_pocl_kernel_.*_workgroup");
-    return impl_->wg_breakpoint.IsValid() && impl_->wg_breakpoint.GetNumLocations() > 0;
+    lldb::SBDebugger::SetInternalVariable("target.skip-prologue", "true", instance);
+    return impl_->wg_breakpoint.IsValid();
 }
 
 size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars, unsigned break_at,
@@ -455,7 +465,7 @@ size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars, unsigned b
     if (!impl_->process.IsValid() || !impl_->abi) {
         return 0;
     }
-    if (!impl_->wg_breakpoint.IsValid() || impl_->wg_breakpoint.GetNumLocations() == 0) {
+    if (!impl_->wg_breakpoint.IsValid()) {
         if (!set_workgroup_breakpoint(impl_->kernel_name)) {
             return 0;
         }

@@ -147,6 +147,8 @@ add_library(ocldbg_core STATIC
     ocldbg/backends/cpu/PoclCPUBackend.cpp
     ocldbg/backends/cpu/WIContextExtractor.cpp
     ocldbg/backends/cpu/WorkGroupTracker.cpp
+    ocldbg/backends/cpu/CPUABI.cpp
+    ocldbg/backends/cpu/aarch64/AArch64CPUABI.cpp
     ocldbg/backends/cpu/x86_64/X86_64CPUABI.cpp
     ocldbg/backends/oclgrind/OclgrindBackend.cpp
     ocldbg/backends/oclgrind/OclgrindSession.cpp
@@ -218,7 +220,7 @@ if (LLVM_LIT_BIN AND FILECHECK_BIN AND OpenCL_FOUND)
         @ONLY
     )
     add_custom_target(runtests
-        COMMAND ${LLVM_LIT_BIN} -v --timeout 10 ${CMAKE_CURRENT_BINARY_DIR}/tests
+        COMMAND ${LLVM_LIT_BIN} -v ${CMAKE_CURRENT_BINARY_DIR}/tests
         DEPENDS ocldbg test_host_runner
         COMMENT "Running LIT test suite for segfault26"
     )

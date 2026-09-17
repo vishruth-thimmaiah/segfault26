@@ -1,4 +1,5 @@
 #pragma once
+#include "backends/cpu/CPUABI.h"
 #include "ocldbg/Backend.h"
 #include "ocldbg/LocationBackend.h"
 
@@ -16,8 +17,11 @@ namespace ocldbg {
 class CPULocationBackend final : public LocationBackend {
 public:
     VarValue evaluate(const VarInfo &var, ExecCtxHandle exec_ctx) override;
-    // TODO (Person C): use LLDB SBFrame / SBValue to evaluate the DWARF
-    // location expression stored in var.dwarf_location_expr.
+
+private:
+    /// DW_OP_reg / DW_OP_breg carry psABI register numbers, so decoding them
+    /// needs the host architecture's mapping.
+    std::unique_ptr<CPUABI> abi_{CPUABI::create_host_abi()};
 };
 
 } // namespace ocldbg

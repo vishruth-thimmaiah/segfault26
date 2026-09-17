@@ -19,7 +19,7 @@ int main() {
     return 0;
 }
 
-// CHECK: Current executable set to '{{.*}}cpp_passthrough.cpp.tmp.exe' (x86_64).
+// CHECK: Current executable set to '{{.*}}cpp_passthrough.cpp.tmp.exe' ({{x86_64|aarch64}}).
 // CHECK: (ocldbg) b compute
 // CHECK: Breakpoint 1: where = {{.*}}compute(int, int)
 // CHECK: (ocldbg) r
