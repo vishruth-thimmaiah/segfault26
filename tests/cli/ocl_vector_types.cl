@@ -3,11 +3,11 @@
 __kernel void vec_kernel(__global float *dst)
 {
     int gx = get_global_id(0);
-    float4 vec = (float4)(1.0f, 2.0f, 3.0f, 4.0f);
-    uchar4 small = (uchar4)(10, 20, 30, 40);
-    vec.x += (float)gx;
+    volatile float8 vec = (float8)(1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f);
+    volatile uchar4 small = (uchar4)(10, 20, 30, 40);
+    float offset = (float)gx;
 
-    dst[gx] = vec.x;
+    dst[gx] = vec.x + (float)small.x + offset;
 }
 
 // CHECK: (ocldbg) ocl break ocl_vector_types.cl:10
@@ -18,11 +18,11 @@ __kernel void vec_kernel(__global float *dst)
 // CHECK: stop reason = breakpoint
 // CHECK: at tempfile_{{[0-9a-zA-Z]+}}.cl:10
 // CHECK: (ocldbg) ocl p vec
-// CHECK: (float4) vec = (1.000000, 2.000000, 3.000000, 4.000000)
+// CHECK: (float8) vec = (1.000000, 2.000000, 3.000000, 4.000000, 5.000000, 6.000000, 7.000000, 8.000000)
 // CHECK: (ocldbg) ocl p small
 // CHECK: (uchar4) small = (10, 20, 30, 40)
 // CHECK: (ocldbg) ocl vars
-// CHECK-DAG: vec (float4) = (1.000000, 2.000000, 3.000000, 4.000000)
+// CHECK-DAG: vec (float8) = (1.000000, 2.000000, 3.000000, 4.000000, 5.000000, 6.000000, 7.000000, 8.000000)
 // CHECK-DAG: small (uchar4) = (10, 20, 30, 40)
 // CHECK: (ocldbg) c
 // CHECK: Process {{[0-9]+}} resuming
