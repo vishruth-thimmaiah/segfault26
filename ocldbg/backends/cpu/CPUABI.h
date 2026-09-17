@@ -66,6 +66,13 @@ protected:
     static uint64_t read_register(lldb::SBFrame frame, const char *reg64, const char *reg32,
                                   bool &found);
 
+    /// True when a work-group is one element wide in y and z, so recovering only
+    /// the x axis is enough to name the work-item. Wider than that and the
+    /// x-only sources below cannot tell the work-items of a group apart.
+    [[nodiscard]] static bool work_group_is_one_dimensional(const Size3 &local_size) {
+        return local_size.y <= 1 && local_size.z <= 1;
+    }
+
     /// Resolve a work-item's local id from the kernel's own debug info, which is
     /// where a kernel built with -cl-opt-disable keeps it. Returns false when no
     /// such variable is in scope, leaving @p out_local_id untouched.

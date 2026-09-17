@@ -1,0 +1,274 @@
+{
+ "avgblur.cl": [
+  {
+   "kernel": "avgblur_horiz",
+   "start": 22,
+   "end": 41,
+   "write_line": 39
+  },
+  {
+   "kernel": "avgblur_vert",
+   "start": 42,
+   "end": 60,
+   "write_line": 59
+  }
+ ],
+ "colorkey.cl": [
+  {
+   "kernel": "colorkey_blend",
+   "start": 22,
+   "end": 36,
+   "write_line": 34
+  },
+  {
+   "kernel": "colorkey",
+   "start": 37,
+   "end": 49,
+   "write_line": 48
+  }
+ ],
+ "convolution.cl": [
+  {
+   "kernel": "convolution_global",
+   "start": 21,
+   "end": 47,
+   "write_line": 44
+  },
+  {
+   "kernel": "sobel_global",
+   "start": 48,
+   "end": 76,
+   "write_line": 74
+  },
+  {
+   "kernel": "prewitt_global",
+   "start": 77,
+   "end": 105,
+   "write_line": 103
+  },
+  {
+   "kernel": "roberts_global",
+   "start": 106,
+   "end": 127,
+   "write_line": 126
+  }
+ ],
+ "deshake.cl": [
+  {
+   "kernel": "grayscale",
+   "start": 199,
+   "end": 208,
+   "write_line": 204
+  },
+  {
+   "kernel": "harris_response",
+   "start": 209,
+   "end": 369,
+   "write_line": null
+  },
+  {
+   "kernel": "refine_features",
+   "start": 370,
+   "end": 423,
+   "write_line": null
+  },
+  {
+   "kernel": "brief_descriptors",
+   "start": 424,
+   "end": 462,
+   "write_line": null
+  },
+  {
+   "kernel": "match_descriptors",
+   "start": 463,
+   "end": 550,
+   "write_line": null
+  },
+  {
+   "kernel": "transform",
+   "start": 551,
+   "end": 592,
+   "write_line": 559
+  },
+  {
+   "kernel": "crop_upscale",
+   "start": 593,
+   "end": 616,
+   "write_line": 601
+  },
+  {
+   "kernel": "draw_debug_info",
+   "start": 617,
+   "end": 647,
+   "write_line": null
+  }
+ ],
+ "neighbor.cl": [
+  {
+   "kernel": "erosion_global",
+   "start": 22,
+   "end": 55,
+   "write_line": 52
+  },
+  {
+   "kernel": "dilation_global",
+   "start": 56,
+   "end": 87,
+   "write_line": 86
+  }
+ ],
+ "nlmeans.cl": [
+  {
+   "kernel": "horiz_sum",
+   "start": 23,
+   "end": 46,
+   "write_line": null
+  },
+  {
+   "kernel": "vert_sum",
+   "start": 47,
+   "end": 61,
+   "write_line": null
+  },
+  {
+   "kernel": "weight_accum",
+   "start": 62,
+   "end": 101,
+   "write_line": null
+  },
+  {
+   "kernel": "average",
+   "start": 102,
+   "end": 115,
+   "write_line": 114
+  }
+ ],
+ "overlay.cl": [
+  {
+   "kernel": "overlay_no_alpha",
+   "start": 19,
+   "end": 43,
+   "write_line": 40
+  },
+  {
+   "kernel": "overlay_internal_alpha",
+   "start": 44,
+   "end": 70,
+   "write_line": 67
+  },
+  {
+   "kernel": "overlay_external_alpha",
+   "start": 71,
+   "end": 104,
+   "write_line": 102
+  }
+ ],
+ "pad.cl": [
+  {
+   "kernel": "pad",
+   "start": 22,
+   "end": 36,
+   "write_line": 35
+  }
+ ],
+ "remap.cl": [
+  {
+   "kernel": "remap_near",
+   "start": 25,
+   "end": 49,
+   "write_line": 47
+  },
+  {
+   "kernel": "remap_linear",
+   "start": 50,
+   "end": 73,
+   "write_line": 72
+  }
+ ],
+ "tonemap.cl": [
+  {
+   "kernel": "tonemap",
+   "start": 209,
+   "end": 272,
+   "write_line": 269
+  }
+ ],
+ "transpose.cl": [
+  {
+   "kernel": "transpose",
+   "start": 18,
+   "end": 35,
+   "write_line": 34
+  }
+ ],
+ "unsharp.cl": [
+  {
+   "kernel": "unsharp_global",
+   "start": 19,
+   "end": 45,
+   "write_line": 43
+  },
+  {
+   "kernel": "unsharp_local",
+   "start": 46,
+   "end": 99,
+   "write_line": 98
+  }
+ ],
+ "xfade.cl": [
+  {
+   "kernel": "fade",
+   "start": 22,
+   "end": 34,
+   "write_line": 32
+  },
+  {
+   "kernel": "wipeleft",
+   "start": 35,
+   "end": 48,
+   "write_line": 46
+  },
+  {
+   "kernel": "wiperight",
+   "start": 49,
+   "end": 62,
+   "write_line": 60
+  },
+  {
+   "kernel": "wipeup",
+   "start": 63,
+   "end": 76,
+   "write_line": 74
+  },
+  {
+   "kernel": "wipedown",
+   "start": 77,
+   "end": 110,
+   "write_line": 108
+  },
+  {
+   "kernel": "slidedown",
+   "start": 111,
+   "end": 119,
+   "write_line": null
+  },
+  {
+   "kernel": "slideup",
+   "start": 120,
+   "end": 128,
+   "write_line": null
+  },
+  {
+   "kernel": "slideleft",
+   "start": 129,
+   "end": 137,
+   "write_line": null
+  },
+  {
+   "kernel": "slideright",
+   "start": 138,
+   "end": 145,
+   "write_line": null
+  }
+ ]
+}

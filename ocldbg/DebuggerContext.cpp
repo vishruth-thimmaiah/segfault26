@@ -240,7 +240,15 @@ bool handle_line_breakpoint(DebuggerContext &dbg, lldb::SBProcess &process, lldb
     }
     ++line_hit_count;
     auto wi = dbg.resolve_stopped_work_item(*hit_tid);
-    std::vector<VarValue> vars = wi ? dbg.inspect_variables(*wi) : std::vector<VarValue>{};
+    std::vector<VarValue> vars;
+    if (wi) {
+        vars = dbg.inspect_variables(*wi);
+    } else {
+        // Which work-item this is could not be established, but the frame's
+        // variables are readable and are what the stop was for.
+        process.SetSelectedThreadByID(*hit_tid);
+        vars = dbg.inspect_current_frame_variables();
+    }
     print_breakpoint_hit(break_at, wi, line_hit_count, vars);
 
     if (break_for > 0 && line_hit_count >= break_for) {
@@ -523,27 +531,62 @@ size_t DebuggerContext::track_workgroup_dispatches(bool inspect_vars, unsigned b
 
 bool DebuggerContext::set_source_breakpoint(unsigned line) {
     load_kernel_dwarf();
-    if (!impl_->dwarf_model.loaded()) {
-        return false;
-    }
-    std::vector<HostAddress> pcs =
-        impl_->dwarf_model.source_to_pcs(SourceLocation{.file = "", .line = line});
-    if (pcs.empty()) {
+    if (!impl_->target.IsValid()) {
         return false;
     }
 
-    lldb::SBModule kernel_mod = find_kernel_module(impl_->target, impl_->kernel_name);
-    if (!kernel_mod.IsValid()) {
+    // pocl compiles each kernel into its own module, so a line belongs to
+    // whichever kernel declares it and the model loaded for one kernel cannot
+    // answer for another. A program with several kernels -- FFmpeg's filters
+    // routinely have them -- needs every kernel module asked, not just the
+    // first one that happened to load.
+    std::vector<HostAddress> pcs;
+    lldb::SBModule kernel_mod;
+    if (impl_->dwarf_model.loaded()) {
+        pcs = impl_->dwarf_model.source_to_pcs(SourceLocation{.file = "", .line = line});
+        if (!pcs.empty()) {
+            kernel_mod = find_kernel_module(impl_->target, impl_->kernel_name);
+        }
+    }
+
+    for (uint32_t i = 0; pcs.empty() && i < impl_->target.GetNumModules(); ++i) {
+        lldb::SBModule m = impl_->target.GetModuleAtIndex(i);
+        const char *fn = m.GetFileSpec().GetFilename();
+        if (fn == nullptr || !is_kernel_module_name(fn, {})) {
+            continue;
+        }
+        std::array<char, 1024> path{};
+        if (m.GetFileSpec().GetPath(path.data(), path.size()) == 0) {
+            continue;
+        }
+        if (!impl_->dwarf_model.load(path.data())) {
+            continue;
+        }
+        pcs = impl_->dwarf_model.source_to_pcs(SourceLocation{.file = "", .line = line});
+        if (!pcs.empty()) {
+            kernel_mod = m;
+        }
+    }
+
+    if (pcs.empty() || !kernel_mod.IsValid()) {
         return false;
     }
 
-    lldb::SBAddress sb_addr = kernel_mod.ResolveFileAddress(pcs[0]);
-    lldb::addr_t load_addr = sb_addr.GetLoadAddress(impl_->target);
-    if (load_addr != LLDB_INVALID_ADDRESS) {
-        impl_->line_breakpoint = impl_->target.BreakpointCreateByAddress(load_addr);
-        return impl_->line_breakpoint.IsValid() && impl_->line_breakpoint.GetNumLocations() > 0;
+    // One source line can lower to several addresses; a breakpoint on only the
+    // first misses the rest of them.
+    std::vector<lldb::addr_t> load_addrs;
+    for (HostAddress pc : pcs) {
+        lldb::addr_t load_addr = kernel_mod.ResolveFileAddress(pc).GetLoadAddress(impl_->target);
+        if (load_addr != LLDB_INVALID_ADDRESS) {
+            load_addrs.push_back(load_addr);
+        }
     }
-    return false;
+    if (load_addrs.empty()) {
+        return false;
+    }
+
+    impl_->line_breakpoint = impl_->target.BreakpointCreateByAddress(load_addrs.front());
+    return impl_->line_breakpoint.IsValid() && impl_->line_breakpoint.GetNumLocations() > 0;
 }
 
 bool DebuggerContext::load_kernel_dwarf() {

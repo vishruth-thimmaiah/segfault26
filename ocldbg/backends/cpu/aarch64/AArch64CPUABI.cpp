@@ -51,9 +51,9 @@ bool AArch64CPUABI::read_local_id(lldb::SBFrame frame, const Size3 &local_size,
     // argument registers but says nothing about where a lowered work-item loop
     // keeps its induction variable, and the register LLVM allocates for it has not
     // been established by observation. Guessing one would report a plausible but
-    // wrong work-item whenever the guess happened to hold a small value.
-    out_local_id = {.x = 0, .y = 0, .z = 0};
-    return true;
+    // wrong work-item whenever the guess happened to hold a small value, and
+    // reporting the origin would do the same, so the work-item stays unknown.
+    return false;
 }
 
 } // namespace ocldbg

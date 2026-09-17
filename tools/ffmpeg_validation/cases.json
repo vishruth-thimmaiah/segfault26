@@ -1,0 +1,8 @@
+[
+ {"name":"avgblur_horiz","chain":"avgblur_opencl=sizeX=3:sizeY=3","line":39,"hits":3,"size":"16x16","prints":["rad","acc","count"]},
+ {"name":"avgblur_vert","chain":"avgblur_opencl=sizeX=3:sizeY=3","line":59,"hits":3,"size":"16x16","prints":["radv","acc","count"]},
+ {"name":"sobel_global","chain":"sobel_opencl","line":74,"hits":3,"size":"16x16","prints":["loc","sum1","sum2"]},
+ {"name":"dilation_global","chain":"dilation_opencl","line":86,"hits":3,"size":"16x16","prints":["loc","px"]},
+ {"name":"transpose","chain":"transpose_opencl","line":34,"hits":3,"size":"16x16","prints":["loc","size"]},
+ {"name":"unsharp_global","chain":"unsharp_opencl","line":43,"hits":3,"size":"16x16","prints":["loc","val"]}
+]

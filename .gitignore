@@ -74,3 +74,5 @@ CLAUDE.md
 __pycache__/
 *.py[cod]
 *$py.class
+# harness output
+tools/ffmpeg_validation/*_results.json
