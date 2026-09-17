@@ -1,4 +1,5 @@
 import os
+import platform
 import shutil
 import lit.formats
 
@@ -49,6 +50,9 @@ clangxx = shutil.which("clang++") or "clang++"
 oclgrind_plugin = getattr(config, "oclgrind_plugin", "")
 if oclgrind_plugin and os.path.exists(oclgrind_plugin):
     config.available_features.add("oclgrind")
+
+# Lets a test say which host architecture it needs.
+config.available_features.add(platform.machine())
 
 config.substitutions.append(("%test_host_runner", host_runner))
 config.substitutions.append(("%ocldbg", ocldbg))

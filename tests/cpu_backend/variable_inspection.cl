@@ -63,3 +63,8 @@ __kernel void reduce_sum(__global const float *src,
 // CHECK-BREAK-DAG: acc (float) = {{[1-9][0-9]*\.[0-9]+}}
 // CHECK-BREAK-NOT: [ocldbg] Breakpoint hit at line 23
 // CHECK-BREAK: [ocldbg] Dry run completed successfully.
+
+// Kept to x86_64: pocl emits debug info for a different subset of a kernel's
+// variables on each target. For this kernel its AArch64 output describes acc and i only, with
+// nothing for the src, dst and n parameters this test reads.
+// REQUIRES: x86_64
