@@ -64,31 +64,72 @@ SourceLocation DWARFSourceModel::pc_to_source(HostAddress pc) const {
     return {};
 }
 
-std::vector<HostAddress> DWARFSourceModel::source_to_pcs(const SourceLocation &loc) const {
-    if (!impl_->loaded || !impl_->dwarf) {
-        return {};
-    }
+static bool matches_source_file(std::string_view filter, std::string_view path) {
+    return filter.empty() || path.ends_with(filter) ||
+           (filter.ends_with(".cl") && path.ends_with(".cl"));
+}
+
+static std::vector<HostAddress> find_pcs_for_line(DWARFContext *dwarf, uint32_t target_line,
+                                                  std::string_view filter_file) {
     std::vector<HostAddress> pcs;
-    for (const auto &cu : impl_->dwarf->compile_units()) {
-        const DWARFDebugLine::LineTable *lt = impl_->dwarf->getLineTableForUnit(cu.get());
+    for (const auto &cu : dwarf->compile_units()) {
+        const DWARFDebugLine::LineTable *lt = dwarf->getLineTableForUnit(cu.get());
         if (lt == nullptr) {
             continue;
         }
         for (const auto &row : lt->Rows) {
-            if (row.Line != loc.line) {
+            if (row.Line != target_line) {
                 continue;
             }
             std::string file_path;
             if (lt->getFileNameByIndex(row.File, cu->getCompilationDir(),
                                        DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath,
                                        file_path)) {
-                if (loc.file.empty() || file_path.ends_with(loc.file) ||
-                    (loc.file.ends_with(".cl") && file_path.ends_with(".cl"))) {
+                if (matches_source_file(filter_file, file_path)) {
                     pcs.push_back(row.Address.Address);
                 }
             }
         }
     }
+    return pcs;
+}
+
+static uint32_t find_next_line(DWARFContext *dwarf, uint32_t min_line,
+                               std::string_view filter_file) {
+    uint32_t best_line = std::numeric_limits<uint32_t>::max();
+    for (const auto &cu : dwarf->compile_units()) {
+        const DWARFDebugLine::LineTable *lt = dwarf->getLineTableForUnit(cu.get());
+        if (lt == nullptr) {
+            continue;
+        }
+        for (const auto &row : lt->Rows) {
+            if (row.Line > min_line && row.Line < best_line) {
+                std::string file_path;
+                if (lt->getFileNameByIndex(row.File, cu->getCompilationDir(),
+                                           DILineInfoSpecifier::FileLineInfoKind::AbsoluteFilePath,
+                                           file_path)) {
+                    if (matches_source_file(filter_file, file_path)) {
+                        best_line = row.Line;
+                    }
+                }
+            }
+        }
+    }
+    return best_line;
+}
+
+std::vector<HostAddress> DWARFSourceModel::source_to_pcs(const SourceLocation &loc) const {
+    if (!impl_->loaded || !impl_->dwarf) {
+        return {};
+    }
+    std::vector<HostAddress> pcs = find_pcs_for_line(impl_->dwarf.get(), loc.line, loc.file);
+    if (pcs.empty() && loc.line > 0) {
+        uint32_t best_line = find_next_line(impl_->dwarf.get(), loc.line, loc.file);
+        if (best_line != std::numeric_limits<uint32_t>::max()) {
+            pcs = find_pcs_for_line(impl_->dwarf.get(), best_line, loc.file);
+        }
+    }
+
     std::ranges::sort(pcs);
     auto [first, last] = std::ranges::unique(pcs);
     pcs.erase(first, last);

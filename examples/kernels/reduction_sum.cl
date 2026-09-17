@@ -1,3 +1,4 @@
+// FLAGS: -k reduce_sum -g_size 16 -l_size 4 --arg-buf 80 --arg-buf 16 --arg-int 4
 /**
  * reduction_bug.cl  —  primary validation kernel for segfault26
  *
@@ -15,8 +16,7 @@ __kernel void reduce_sum(__global const float *src,
     int gx = get_global_id(0);
 
     float acc = 0.0f;
-    /* BUG: should be i < n, not i <= n */
-    for (int i = 0; i <= n; i++) {   /* <-- set breakpoint here */
+    for (int i = 0; i <= n; i++) {
         acc += src[gx * n + i];
     }
 

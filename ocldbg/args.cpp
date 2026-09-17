@@ -56,6 +56,10 @@ bool parse_flag_opts(ProgramArgs &args, std::string_view arg, int &i, int argc, 
         args.track_wg = true;
         return true;
     }
+    if (arg == "--dap") {
+        args.dap_mode = true;
+        return true;
+    }
     if (arg == "--inspect-vars") {
         args.inspect_vars = true;
         return true;
@@ -80,18 +84,22 @@ bool parse_numeric_opts(ProgramArgs &args, std::string_view arg, int &i, int arg
 }
 
 void parse_positional_arg(ProgramArgs &args, std::string_view arg) {
-    if (!arg.empty() && arg.front() != '-') {
-        if (args.host_binary.empty()) {
+    if (args.host_binary.empty()) {
+        if (!arg.empty() && arg.front() != '-') {
             args.host_binary = arg;
-        } else {
-            args.host_args.emplace_back(arg);
         }
+    } else {
+        args.host_args.emplace_back(arg);
     }
 }
 
 void parse_trailing_args(ProgramArgs &args, int &i, int argc, char **argv) {
     for (++i; i < argc; ++i) {
-        parse_positional_arg(args, argv[i]);
+        if (args.host_binary.empty()) {
+            args.host_binary = argv[i];
+        } else {
+            args.host_args.emplace_back(argv[i]);
+        }
     }
 }
 
@@ -101,6 +109,10 @@ ProgramArgs parse_arguments(int argc, char **argv) {
     ProgramArgs args;
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
+        if (!args.host_binary.empty()) {
+            args.host_args.emplace_back(arg);
+            continue;
+        }
         if (arg == "-v" || arg == "--version") {
             args.show_version = true;
             continue;
@@ -153,6 +165,7 @@ void print_help() {
         "  --break-for <x>    Stop at breakpoint x times (default: every time)\n"
         "  --print <expr>     Evaluate expression at each stop (oclgrind backend; repeatable)\n"
         "  --backend <name>   Execution backend (default: cpu)\n"
+        "  --dap              Run DAP server over stdio\n"
         "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n"
         "  -v, --version      Display version and build information\n"
         "  -h, --help         Display this help message\n");

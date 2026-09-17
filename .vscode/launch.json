@@ -1,0 +1,35 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug Current Open Kernel (ocldbg)",
+            "type": "ocldbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/test_host_runner",
+            "args": [
+                "${file}"
+            ],
+            "kernel": "${file}",
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "preLaunchTask": "Build All",
+            "environment": [
+                {
+                    "name": "POCL_CACHE_DIR",
+                    "value": "${workspaceFolder}/build/.pocl_cache"
+                }
+            ]
+        },
+        {
+            "name": "Debug Ocldbg (LLDB)",
+            "type": "lldb-dap",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/ocldbg",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "preLaunchTask": "Build ocldbg",
+            "env": {}
+        }
+    ]
+}

@@ -1,7 +1,7 @@
 // RUN: rm -rf %t.cache
 // RUN: env POCL_CACHE_DIR=%t.cache POCL_CPU_NUM_WORKERS=1 %ocldbg --dry-run --break-at 28 \
 // RUN:   --break-for 1 %test_host_runner %s addr_spaces | %FileCheck %s
-
+// FLAGS: -k addr_spaces -g_size 16 -l_size 4 --arg-buf-ramp 16 1.0 --arg-buf-val 4 2.0 --arg-local 4 --arg-buf 16
 /**
  * address_spaces.cl — Tests that kernel pointer arguments report the address
  * space they were declared with.

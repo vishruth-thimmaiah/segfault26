@@ -189,7 +189,7 @@ target_link_libraries(ocldbg PRIVATE
 # -----------------------------------------------------------------------------
 if (OpenCL_FOUND)
     add_executable(test_host_runner
-        tests/host_runner.c
+        examples/host_runner.c
     )
     target_link_libraries(test_host_runner PRIVATE
         OpenCL::OpenCL
@@ -218,8 +218,8 @@ if (LLVM_LIT_BIN AND FILECHECK_BIN AND OpenCL_FOUND)
         @ONLY
     )
     add_custom_target(runtests
-        COMMAND ${LLVM_LIT_BIN} -v ${CMAKE_CURRENT_BINARY_DIR}/tests
-        DEPENDS test_host_runner ocldbg
+        COMMAND ${LLVM_LIT_BIN} -v --timeout 10 ${CMAKE_CURRENT_BINARY_DIR}/tests
+        DEPENDS ocldbg test_host_runner
         COMMENT "Running LIT test suite for segfault26"
     )
     add_custom_target(check-lit DEPENDS runtests)
@@ -244,6 +244,7 @@ if (CLANG_FORMAT_BIN)
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime_inject/*.h
         ${CMAKE_CURRENT_SOURCE_DIR}/runtime_inject/*.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/*.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.c
     )
     add_custom_target(format
         COMMAND ${CLANG_FORMAT_BIN} -i ${CXX_FORMAT_SOURCES}

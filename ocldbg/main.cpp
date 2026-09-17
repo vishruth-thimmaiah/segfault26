@@ -46,22 +46,7 @@ void print_tracking_summary(size_t dispatches, size_t expected) {
 
 void handle_workgroup_tracking(ocldbg::DebuggerContext &dbg, const ocldbg::ProgramArgs &args,
                                const ocldbg::KernelLaunchInfo &launch_info) {
-    // Infer kernel name from the last host arg if it doesn't look like a file path.
-    // host_runner.c convention: argv[1]=<cl_file> argv[2]=<kernel_name>
-    std::string kernel_name;
-    if (!args.host_args.empty()) {
-        const std::string &last = args.host_args.back();
-        if (last.size() < 3 || last.substr(last.size() - 3) != ".cl") {
-            kernel_name = last;
-        }
-    }
-
-    if (kernel_name.empty()) {
-        std::cerr << "[ocldbg] Warning: Kernel name required as last host arg\n";
-        return;
-    }
-
-    dbg.set_workgroup_breakpoint(kernel_name);
+    dbg.set_workgroup_breakpoint(launch_info.kernel_name);
     size_t dispatches =
         dbg.track_workgroup_dispatches(args.inspect_vars, args.break_at, args.break_for);
     if (args.track_wg) {
@@ -146,7 +131,7 @@ int main(int argc, char **argv) {
     }
 
     // DAP server session
-    if (args.dap_port > 0) {
+    if (args.dap_mode || args.dap_port > 0) {
         ocldbg::DebuggerContext::init();
         ocldbg::DebuggerContext dbg;
         int ret = dbg.run_dap(args.backend_name, args.dap_port);

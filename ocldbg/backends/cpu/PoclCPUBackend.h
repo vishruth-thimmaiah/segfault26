@@ -49,6 +49,8 @@ private:
     CPULocationBackend loc_backend_;
     StopCallback stop_cb_;
 
+    void notify_stop();
+
     struct Impl;
     std::unique_ptr<Impl> impl_; // holds LLDB SBDebugger, SBTarget, SBProcess
 };

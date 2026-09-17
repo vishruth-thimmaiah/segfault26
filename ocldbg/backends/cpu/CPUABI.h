@@ -19,6 +19,12 @@ public:
     virtual bool read_enqueue_ndrange(lldb::SBProcess process, lldb::SBFrame frame,
                                       Size3 &out_global, Size3 &out_local) = 0;
 
+    /// Extract the kernel name passed to clEnqueueNDRangeKernel at its call site.
+    virtual bool read_enqueue_kernel_name(lldb::SBProcess process, lldb::SBFrame frame,
+                                          std::string &out_kernel_name) {
+        return false;
+    }
+
     /// Extract work-group coordinates (group_x, group_y, group_z) from the
     /// entry frame of _pocl_kernel_<name>_workgroup according to ABI convention.
     virtual bool read_workgroup_id(lldb::SBFrame frame, Size3 &out_wg) = 0;
