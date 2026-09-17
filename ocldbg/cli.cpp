@@ -55,7 +55,7 @@ void execute_pre_session_commands(DebuggerContext &dbg, lldb::SBCommandInterpret
     if (!config.host_binary.empty()) {
         run_cli_command(dbg, interp, "target create \"" + config.host_binary + "\"", false);
         if (!config.host_args.empty()) {
-            std::string args_cmd = "settings set target.run-args";
+            std::string args_cmd = "settings set -- target.run-args";
             for (const auto &arg : config.host_args) {
                 args_cmd += " \"" + arg + "\"";
             }

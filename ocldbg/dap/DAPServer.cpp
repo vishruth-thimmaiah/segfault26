@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <array>
 #include <cctype>
+#include <format>
 #include <iostream>
 #include <lldb/API/SBFileSpec.h>
 #include <lldb/API/SBLineEntry.h>
@@ -28,6 +29,59 @@ namespace {
 void send_raw_message(const std::string &json_payload, std::ostream &out) {
     out << "Content-Length: " << json_payload.size() << "\r\n\r\n" << json_payload;
     out.flush();
+}
+
+std::string format_dap_work_item_name(const OCLWorkItem &wi, size_t default_dim = 1) {
+    size_t dim = wi.work_dim > 0 ? wi.work_dim : default_dim;
+    if (dim == 0) {
+        if (wi.global_id.z > 0 || wi.group_id.z > 0) {
+            dim = 3;
+        } else if (wi.global_id.y > 0 || wi.group_id.y > 0) {
+            dim = 2;
+        } else {
+            dim = 1;
+        }
+    }
+    if (dim == 1) {
+        return std::format("Work-Item ({}) [Work-Group ({})]", wi.global_id.x, wi.group_id.x);
+    }
+    if (dim == 2) {
+        return std::format("Work-Item ({}, {}) [Work-Group ({}, {})]", wi.global_id.x,
+                           wi.global_id.y, wi.group_id.x, wi.group_id.y);
+    }
+    return std::format("Work-Item ({}, {}, {}) [Work-Group ({}, {}, {})]", wi.global_id.x,
+                       wi.global_id.y, wi.global_id.z, wi.group_id.x, wi.group_id.y, wi.group_id.z);
+}
+
+size_t infer_work_dim_from_args(const std::vector<std::string> &args) {
+    for (size_t i = 0; i < args.size(); ++i) {
+        if ((args[i] == "-g" || args[i] == "-g_size" || args[i] == "--global-size") &&
+            i + 1 < args.size()) {
+            size_t separators = 0;
+            for (char c : args[i + 1]) {
+                if (c == ',' || c == 'x') {
+                    separators++;
+                }
+            }
+            return std::min<size_t>(separators + 1, 3);
+        }
+    }
+    return 1;
+}
+
+std::string clean_kernel_function_name(const char *fn) {
+    if (fn == nullptr) {
+        return "kernel";
+    }
+    std::string_view fn_sv = fn;
+    if (fn_sv.starts_with("_pocl_kernel_")) {
+        fn_sv.remove_prefix(13);
+        if (fn_sv.ends_with("_workgroup")) {
+            fn_sv.remove_suffix(10);
+        }
+        return std::string{fn_sv};
+    }
+    return fn;
 }
 
 } // namespace
@@ -188,6 +242,7 @@ public:
                 current_source_file = launch_kernel_file;
                 user_source_file = launch_kernel_file;
             }
+            launch_work_dim = infer_work_dim_from_args(host_args);
             apply_environment(args);
         }
         backend.launch(program, host_args);
@@ -232,7 +287,7 @@ public:
         for (const auto &[tid, wi] : threads) {
             llvm::json::Object t;
             t["id"] = tid;
-            std::string name = wi.str();
+            std::string name = format_dap_work_item_name(wi, launch_work_dim);
             if (wi.exec_ctx != nullptr) {
                 const auto *ctx = static_cast<const CPUExecContext *>(wi.exec_ctx);
                 if (ctx->frame.IsValid()) {
@@ -287,7 +342,7 @@ public:
                     }
                 }
                 if (const char *fn = ctx->frame.GetFunctionName()) {
-                    info.fn_name = fn;
+                    info.fn_name = clean_kernel_function_name(fn);
                 }
             }
         }
@@ -465,7 +520,7 @@ public:
             selected_wi = out_wi;
             llvm::json::Object body;
             body["selected"] = true;
-            body["workItem"] = out_wi.str();
+            body["workItem"] = format_dap_work_item_name(out_wi, launch_work_dim);
 
             std::string body_str;
             llvm::raw_string_ostream os(body_str);
@@ -521,6 +576,7 @@ private:
     std::string current_source_file;
     std::string user_source_file;
     std::string launch_kernel_file;
+    size_t launch_work_dim = 1;
     unsigned current_line = 0;
 };
 

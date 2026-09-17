@@ -13,9 +13,10 @@ namespace ocldbg {
 /// an Oclgrind WorkItem, an AMD wave lane, and a CUDA thread all map to
 /// this single type. Backend-specific detail lives in exec_ctx only.
 struct OCLWorkItem {
-    Size3 global_id; ///< (gx, gy, gz)
-    Size3 local_id;  ///< (lx, ly, lz) within the work-group
-    Size3 group_id;  ///< work-group coordinate
+    Size3 global_id;     ///< (gx, gy, gz)
+    Size3 local_id;      ///< (lx, ly, lz) within the work-group
+    Size3 group_id;      ///< work-group coordinate
+    size_t work_dim = 0; ///< NDRange dimension (1, 2, or 3, 0 = unset)
 
     /// Backend-specific execution context handle.
     /// CPU:      pointer to a CPUExecContext (wraps LLDB SBFrame)
