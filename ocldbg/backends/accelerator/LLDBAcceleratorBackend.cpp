@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -25,6 +26,7 @@
 #include <lldb/API/SBThread.h>
 #include <lldb/API/SBValue.h>
 #include <map>
+#include <string_view>
 
 namespace ocldbg {
 
@@ -55,8 +57,14 @@ constexpr int kDefaultStopTimeoutSeconds = 120;
 /// legitimately run long, so this can be raised with
 /// OCLDBG_ACCELERATOR_TIMEOUT_SECONDS.
 std::chrono::seconds stop_timeout() {
-    const char *value = std::getenv("OCLDBG_ACCELERATOR_TIMEOUT_SECONDS");
-    const int seconds = value != nullptr ? std::atoi(value) : 0;
+    int seconds = 0;
+    if (const char *value = std::getenv("OCLDBG_ACCELERATOR_TIMEOUT_SECONDS")) {
+        const std::string_view text(value);
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), seconds);
+        if (parsed.ec != std::errc()) {
+            seconds = 0;
+        }
+    }
     return std::chrono::seconds(seconds > 0 ? seconds : kDefaultStopTimeoutSeconds);
 }
 
