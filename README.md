@@ -102,7 +102,7 @@ Run the provided build script:
 ```
 Outputs:
 ```text
-Usage: ocldbg [--backend cpu|oclgrind] [--port <N>] <host_binary> [args...]
+Usage: ocldbg [--backend cpu|oclgrind|accelerator] [--port <N>] <host_binary> [args...]
 ```
 
 ### Debugging on the Oclgrind Emulator
@@ -127,6 +127,50 @@ OCLDBG_BUILD_OPTIONS=-cl-opt-disable ./build/ocldbg --backend oclgrind --dry-run
 Oclgrind always compiles kernels with debug info and rejects `-g`, which is why
 the build options are overridden above. Work-items run one at a time in a
 deterministic order, so the reported sequence is reproducible.
+
+### Debugging Through LLDB's Accelerator Plugin Framework (experimental)
+
+LLVM's LLDB can debug an accelerator alongside the host process: an `lldb-server`
+plugin has LLDB set breakpoints in the host, then connect a second target for the
+accelerator. `--backend accelerator` drives that flow, sets a source breakpoint on
+the accelerator, and maps its threads to work-items. It needs an `lldb-server` built
+with an accelerator plugin, selected with `LLDB_DEBUGSERVER_PATH`. Only `--dry-run`
+is supported, and stepping is not.
+
+Two builds of LLDB have been used:
+
+- **Upstream (LLDB 23 or later)** ships the framework and only a mock plugin
+  (`-DLLDB_ENABLE_MOCK_ACCELERATOR_PLUGIN=ON`). It exercises the flow without a GPU.
+- **The `llvm-server-plugins` branch of `clayborg/llvm-project`** has the AMD GPU
+  plugin (`-DLLDB_ENABLE_AMDGPU_PLUGIN=ON -DROCM_PATH=/opt/rocm`). It uses an older
+  protocol than upstream, so its `liblldb` and `lldb-server` must be used together.
+  Verified on an RX 9060 XT (gfx1200) with ROCm 7.2, after two fixes to the plugin: it
+  picked the first amd-dbgapi agent even when that was an unsupported integrated GPU,
+  and it set its loader breakpoint by symbol name, which does not resolve in a
+  stripped `libhsa-runtime64.so`.
+
+```bash
+LLDB_DEBUGSERVER_PATH=/path/to/lldb-server ./build/ocldbg --dry-run \
+    --backend accelerator --break-file kernel.hip --break-at 26 --break-for 1 \
+    --print idx ./a.out
+```
+
+```text
+[ocldbg] Accelerator target amdgcn-amd-amdhsa--gfx1200 connected with 1 thread(s)
+[ocldbg] Accelerator stopped (stop 1) with 64 thread(s)
+[ocldbg]   WI(0,0,0) grp(0,0,0) in compute_element(Vec3 const*, ...) at kernel.hip:26
+[ocldbg]     idx = 32
+```
+
+Known limits: work-item ids are the thread's position in LLDB's list, not NDRange
+coordinates. Continuing past a breakpoint that many lanes hit does not finish in the
+AMD plugin, which does not use amd-dbgapi's displaced stepping, so use `--break-for 1`
+(a resume that does not finish is reported after `OCLDBG_ACCELERATOR_TIMEOUT_SECONDS`,
+120 by default). Reading GPU memory needs the plugin branch's `SBProcess::ReadMemoryFromSpec`.
+
+`tests/accelerator/` has an end-to-end test for each. They run only when
+`OCLDBG_MOCK_ACCELERATOR_SERVER` (mock), or `OCLDBG_AMD_ACCELERATOR_SERVER` and
+`OCLDBG_AMD_GPU_ARCH` (AMD, with `hipcc` and a GPU), are set.
 
 ### Run Host Test Target
 Verify OpenCL platform and device discovery on your host:

@@ -36,7 +36,8 @@ bool parse_flag_opts(ProgramArgs &args, std::string_view arg, int &i, int argc, 
         parse_vector_opt(arg, "-s", "--source", i, argc, argv, args.source_after) ||
         parse_vector_opt(arg, "-o", "--one-line", i, argc, argv, args.one_line_after) ||
         parse_vector_opt(arg, "", "--print", i, argc, argv, args.print_exprs) ||
-        parse_string_opt(arg, "", "--backend", i, argc, argv, args.backend_name)) {
+        parse_string_opt(arg, "", "--backend", i, argc, argv, args.backend_name) ||
+        parse_string_opt(arg, "", "--break-file", i, argc, argv, args.break_file)) {
         return true;
     }
 
@@ -162,9 +163,12 @@ void print_help() {
         "completion)\n"
         "  --inspect-vars     Inspect variables at first work-group stop\n"
         "  --break-at <line>  Break at kernel source line (e.g. --break-at 17)\n"
+        "  --break-file <f>   Source file of the breakpoint (accelerator backend)\n"
         "  --break-for <x>    Stop at breakpoint x times (default: every time)\n"
-        "  --print <expr>     Evaluate expression at each stop (oclgrind backend; repeatable)\n"
-        "  --backend <name>   Execution backend: cpu|oclgrind|amd (default: cpu)\n"
+        "  --print <expr>     Evaluate expression at each stop (oclgrind and accelerator "
+        "backends; repeatable)\n"
+        "  --backend <name>   Execution backend: cpu|oclgrind|amd|accelerator (default: cpu; "
+        "accelerator needs --dry-run)\n"
         "  --dap              Run DAP server over stdio\n"
         "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n"
         "  -v, --version      Display version and build information\n"
