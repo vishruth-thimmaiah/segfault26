@@ -491,7 +491,7 @@ size_t LLDBAcceleratorBackend::read_global_memory(HostAddress addr, void *buf, s
         return 0;
     }
     lldb::SBError error;
-#if defined(OCLDBG_HAVE_SB_PROCESS_ADDRESS)
+#ifdef OCLDBG_HAVE_SB_PROCESS_ADDRESS
     // A plain read goes to the host-style default address space. Use the plugin's
     // "global" space when it names one, and the default space otherwise.
     const lldb::addr_space_t space = state.accel_process.GetAddressSpaceID("global", error);
