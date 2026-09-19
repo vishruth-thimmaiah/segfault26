@@ -17,6 +17,8 @@ struct ProgramArgs {
     bool track_wg = false;
     bool inspect_vars = false;
     unsigned break_at = 0;
+    std::string break_file;
+    std::string read_memory;
     size_t break_for = 0;
     std::vector<std::string> print_exprs;
     bool show_help = false;
@@ -31,7 +33,7 @@ struct ProgramArgs {
 
     [[nodiscard]] bool has_ocldbg_specific_args() const {
         return show_wg_bounds || track_wg || inspect_vars || break_at > 0 || break_for > 0 ||
-               !print_exprs.empty();
+               !break_file.empty() || !read_memory.empty() || !print_exprs.empty();
     }
 };
 

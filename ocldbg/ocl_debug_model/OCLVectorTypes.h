@@ -15,9 +15,9 @@ namespace ocldbg {
 /// raw bytes (from a register, from memory, from a DWARF implicit-value
 /// expression, ...) can use parse_ocl_vector_type()/format_ocl_vector_bytes()
 /// to decode them, rather than each backend re-implementing this. The CPU
-/// backend (PoclCPUBackend.cpp) and the AMD backend (AMDBackend.cpp) both
-/// need this; Oclgrind does not, since its values are already formatted by
-/// Oclgrind's own interpreter before ocldbg ever sees them.
+/// backend (PoclCPUBackend.cpp) needs this; Oclgrind does not, since its
+/// values are already formatted by Oclgrind's own interpreter before ocldbg
+/// ever sees them, and LLDB formats the values of the accelerator backend.
 struct OCLVectorType {
     size_t elem_size = 0;
     size_t count = 0; ///< logical lane count, e.g. 3 for float3

@@ -33,6 +33,36 @@ find_library(LLDB_LIB NAMES lldb liblldb lldb-22 lldb-21 lldb-20 lldb-19 lldb-18
 )
 if (LLDB_LIB)
     message(STATUS "Found LLDB library: ${LLDB_LIB}")
+
+    # Reading an accelerator's memory needs an address space. Upstream LLDB main
+    # has SBProcessAddress and SBProcess::GetAddressSpaceID; builds from the older
+    # GPU plugin branch have SBProcess::ReadMemoryFromSpec instead.
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_INCLUDES ${LLVM_INCLUDE_DIRS})
+    set(CMAKE_REQUIRED_LIBRARIES ${LLDB_LIB})
+    check_cxx_source_compiles("
+        #include <lldb/API/SBAddress.h>
+        #include <lldb/API/SBError.h>
+        #include <lldb/API/SBProcess.h>
+        int main() {
+            lldb::SBProcess process;
+            lldb::SBError error;
+            const lldb::addr_space_t space = process.GetAddressSpaceID(\"global\", error);
+            return static_cast<int>(
+                process.ReadMemory(lldb::SBProcessAddress(0ULL, space), nullptr, 0, error));
+        }" OCLDBG_HAVE_SB_PROCESS_ADDRESS)
+    check_cxx_source_compiles("
+        #include <lldb/API/SBAddress.h>
+        #include <lldb/API/SBError.h>
+        #include <lldb/API/SBProcess.h>
+        int main() {
+            lldb::SBProcess process;
+            lldb::SBError error;
+            return static_cast<int>(process.ReadMemoryFromSpec(
+                lldb::SBAddressSpec(0ULL, \"generic\"), nullptr, 0, error));
+        }" OCLDBG_HAVE_SB_ADDRESS_SPEC)
+    unset(CMAKE_REQUIRED_INCLUDES)
+    unset(CMAKE_REQUIRED_LIBRARIES)
 else()
     message(WARNING "LLDB library not found; linking without it.")
     set(LLDB_LIB "")
@@ -153,6 +183,8 @@ add_library(ocldbg_core STATIC
     ocldbg/backends/cpu/x86_64/X86_64CPUABI.cpp
     ocldbg/backends/oclgrind/OclgrindBackend.cpp
     ocldbg/backends/oclgrind/OclgrindSession.cpp
+    ocldbg/backends/accelerator/LLDBAcceleratorBackend.cpp
+    ocldbg/backends/accelerator/LLDBAcceleratorSession.cpp
     ocldbg/dap/DAPServer.cpp
 )
 target_compile_definitions(ocldbg_core PRIVATE
@@ -161,6 +193,12 @@ target_compile_definitions(ocldbg_core PRIVATE
     OCLDBG_OCLGRIND_PLUGIN_PATH="${OCLDBG_OCLGRIND_PLUGIN_PATH}"
     OCLDBG_OCLGRIND_LIB_DIR="${OCLGRIND_LIB_DIR}"
 )
+if (OCLDBG_HAVE_SB_ADDRESS_SPEC)
+    target_compile_definitions(ocldbg_core PRIVATE OCLDBG_HAVE_SB_ADDRESS_SPEC)
+endif()
+if (OCLDBG_HAVE_SB_PROCESS_ADDRESS)
+    target_compile_definitions(ocldbg_core PRIVATE OCLDBG_HAVE_SB_PROCESS_ADDRESS)
+endif()
 target_include_directories(ocldbg_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/ocldbg

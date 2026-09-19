@@ -6,6 +6,7 @@
  */
 
 #include "args.h"
+#include "backends/accelerator/LLDBAcceleratorSession.h"
 #include "backends/oclgrind/OclgrindSession.h"
 #include "ocldbg/DebuggerContext.h"
 #include "ocldbg/Types.h"
@@ -72,6 +73,25 @@ int run_dry_run(const ocldbg::ProgramArgs &args) {
             .break_for = args.break_for,
             .print_exprs = args.print_exprs,
         });
+    }
+
+    if (args.backend_name == "accelerator") {
+        if (args.break_at > 0 && args.break_file.empty()) {
+            std::cerr << "error: the accelerator backend needs --break-file with --break-at\n";
+            return 1;
+        }
+        ocldbg::DebuggerContext::init();
+        const int ret = ocldbg::run_accelerator_session(ocldbg::AcceleratorSessionConfig{
+            .host_binary = args.host_binary,
+            .host_args = args.host_args,
+            .break_file = args.break_file,
+            .break_at = args.break_at,
+            .break_for = args.break_for,
+            .read_memory = args.read_memory,
+            .print_exprs = args.print_exprs,
+        });
+        ocldbg::DebuggerContext::terminate();
+        return ret;
     }
 
     ocldbg::DebuggerContext::init();

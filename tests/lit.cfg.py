@@ -51,6 +51,22 @@ oclgrind_plugin = getattr(config, "oclgrind_plugin", "")
 if oclgrind_plugin and os.path.exists(oclgrind_plugin):
     config.available_features.add("oclgrind")
 
+# The accelerator backend needs an lldb-server built with an accelerator plugin.
+# The mock one comes from upstream LLDB main (address spaces landed in September
+# 2026), so distro packages lack it; tests that drive it declare
+# REQUIRES: mock-accelerator.
+mock_accelerator_server = os.environ.get("OCLDBG_MOCK_ACCELERATOR_SERVER", "")
+if mock_accelerator_server and os.path.exists(mock_accelerator_server):
+    config.available_features.add("mock-accelerator")
+
+# The AMD tests also need an lldb-server built with the AMD GPU plugin, hipcc,
+# and the architecture of the GPU to compile for (for example gfx1200).
+amd_accelerator_server = os.environ.get("OCLDBG_AMD_ACCELERATOR_SERVER", "")
+amd_gpu_arch = os.environ.get("OCLDBG_AMD_GPU_ARCH", "")
+hipcc = shutil.which("hipcc") or "/opt/rocm/bin/hipcc"
+if os.path.exists(amd_accelerator_server) and amd_gpu_arch and os.path.exists(hipcc):
+    config.available_features.add("amd-accelerator")
+
 # Lets a test say which host architecture it needs.
 config.available_features.add(platform.machine())
 
@@ -59,6 +75,10 @@ config.substitutions.append(("%ocldbg", ocldbg))
 config.substitutions.append(("%FileCheck", filecheck))
 config.substitutions.append(("%llvm-dis", llvm_dis))
 config.substitutions.append(("%clangxx", clangxx))
+config.substitutions.append(("%mock_accelerator_server", mock_accelerator_server))
+config.substitutions.append(("%amd_accelerator_server", amd_accelerator_server))
+config.substitutions.append(("%amd_gpu_arch", amd_gpu_arch))
+config.substitutions.append(("%hipcc", hipcc))
 
 for var in [
     "PATH",
