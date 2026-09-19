@@ -1,6 +1,5 @@
 #include "DAPServer.h"
 
-#include "backends/cpu/CPUExecContext.h"
 #include "dwarf/DWARFSourceModel.h"
 #include "ocl_debug_model/OCLVariableResolver.h"
 
@@ -149,32 +148,6 @@ static llvm::json::Object create_bp_response(Backend &backend, const std::string
     return bp_resp;
 }
 
-static void vars_from_lldb_frame(lldb::SBFrame &frame, llvm::json::Array &vars_arr) {
-    lldb::SBValueList val_list = frame.GetVariables(true, true, true, false);
-    uint32_t num_vals = val_list.GetSize();
-    for (uint32_t i = 0; i < num_vals; ++i) {
-        lldb::SBValue val = val_list.GetValueAtIndex(i);
-        if (!val.IsValid()) {
-            continue;
-        }
-        const char *name = val.GetName();
-        if (name == nullptr) {
-            continue;
-        }
-        const char *v_str = val.GetValue();
-        if (v_str == nullptr) {
-            v_str = val.GetSummary();
-        }
-        const char *t_str = val.GetTypeName();
-        llvm::json::Object var_obj;
-        var_obj["name"] = name;
-        var_obj["value"] = (v_str != nullptr) ? v_str : "<unavailable>";
-        var_obj["type"] = (t_str != nullptr) ? t_str : "";
-        var_obj["variablesReference"] = 0;
-        vars_arr.push_back(std::move(var_obj));
-    }
-}
-
 class DAPServer::Impl {
     friend class DAPServer;
 
@@ -288,16 +261,10 @@ public:
             llvm::json::Object t;
             t["id"] = tid;
             std::string name = format_dap_work_item_name(wi, launch_work_dim);
-            if (wi.exec_ctx != nullptr) {
-                const auto *ctx = static_cast<const CPUExecContext *>(wi.exec_ctx);
-                if (ctx->frame.IsValid()) {
-                    if (const char *fn = ctx->frame.GetFunctionName()) {
-                        if (std::string_view(fn).find("workgroup") == std::string_view::npos) {
-                            name = std::string("Host Thread #") + std::to_string(tid) + " (" + fn +
-                                   ")";
-                        }
-                    }
-                }
+            if (!wi.function.empty() &&
+                std::string_view(wi.function).find("workgroup") == std::string_view::npos) {
+                name =
+                    std::string("Host Thread #") + std::to_string(tid) + " (" + wi.function + ")";
             }
             t["name"] = name;
             threads_arr.push_back(std::move(t));
@@ -327,24 +294,15 @@ public:
         info.path = info.file;
         info.line = default_line > 0 ? default_line : 1;
 
-        if (target_wi.exec_ctx != nullptr) {
-            const auto *ctx = static_cast<const CPUExecContext *>(target_wi.exec_ctx);
-            if (ctx->frame.IsValid()) {
-                lldb::SBLineEntry le = ctx->frame.GetLineEntry();
-                if (le.IsValid()) {
-                    info.line = le.GetLine();
-                    if (const char *f = le.GetFileSpec().GetFilename()) {
-                        info.file = f;
-                    }
-                    std::array<char, 1024> pbuf{};
-                    if (le.GetFileSpec().GetPath(pbuf.data(), pbuf.size()) > 0) {
-                        info.path = pbuf.data();
-                    }
-                }
-                if (const char *fn = ctx->frame.GetFunctionName()) {
-                    info.fn_name = clean_kernel_function_name(fn);
-                }
-            }
+        if (target_wi.location.line > 0) {
+            info.line = target_wi.location.line;
+        }
+        if (!target_wi.location.file.empty()) {
+            info.file = target_wi.location.file;
+            info.path = target_wi.location.file;
+        }
+        if (!target_wi.function.empty()) {
+            info.fn_name = clean_kernel_function_name(target_wi.function.c_str());
         }
         return info;
     }
@@ -476,14 +434,6 @@ public:
             OCLWorkItem target_wi = resolve_target_wi(tid, current_stop);
             std::vector<VarValue> resolved = resolver.resolve(target_wi, backend);
             populate_resolved_vars(resolved, is_globals, vars_arr);
-
-            if (vars_arr.empty() && !is_globals && target_wi.exec_ctx != nullptr) {
-                const auto *ctx = static_cast<const CPUExecContext *>(target_wi.exec_ctx);
-                if (ctx->frame.IsValid()) {
-                    lldb::SBFrame frame = ctx->frame;
-                    vars_from_lldb_frame(frame, vars_arr);
-                }
-            }
         }
 
         llvm::json::Object body;
@@ -595,17 +545,11 @@ DAPServer::DAPServer(Backend &backend, DWARFSourceModel &dwarf, OCLVariableResol
         impl_->stopped_thread_id = stopped_id;
         impl_->selected_wi.reset();
 
-        if (current_stop_.stopped.exec_ctx != nullptr) {
-            const auto *ctx = static_cast<const CPUExecContext *>(current_stop_.stopped.exec_ctx);
-            if (ctx->frame.IsValid()) {
-                lldb::SBLineEntry le = ctx->frame.GetLineEntry();
-                if (le.IsValid()) {
-                    impl_->current_line = le.GetLine();
-                    if (const char *f = le.GetFileSpec().GetFilename()) {
-                        impl_->current_source_file = f;
-                    }
-                }
-            }
+        if (current_stop_.stopped.location.line > 0) {
+            impl_->current_line = current_stop_.stopped.location.line;
+        }
+        if (!current_stop_.stopped.location.file.empty()) {
+            impl_->current_source_file = current_stop_.stopped.location.file;
         }
 
         llvm::json::Object body;

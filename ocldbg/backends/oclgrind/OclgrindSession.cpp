@@ -45,7 +45,7 @@ int run_oclgrind_session(const OclgrindSessionConfig &config) {
     size_t hits = 0;
     backend.on_stop([&](const OCLStopContext &stop) {
         ++hits;
-        print_stop(stop.stopped, backend.last_stop_line(), hits,
+        print_stop(stop.stopped, stop.stopped.location.line, hits,
                    evaluate_all(backend, stop.stopped, config.print_exprs));
     });
 

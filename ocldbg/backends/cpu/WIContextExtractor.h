@@ -33,6 +33,11 @@ public:
     bool extract(uint64_t host_thread_id, const Size3 &wg_id, const Size3 &local_size,
                  OCLWorkItem &out);
 
+    /// Record on @p out where @p frame is stopped and the function it is in.
+    /// Several paths build a work-item from a frame, and all of them owe the
+    /// consumer this, so it is filled in one place.
+    static void set_source_location(lldb::SBFrame frame, OCLWorkItem &out);
+
     CPUABI *abi() { return abi_.get(); }
 
 private:

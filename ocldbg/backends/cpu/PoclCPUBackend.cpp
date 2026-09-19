@@ -2,6 +2,7 @@
 
 #include "WIContextExtractor.h"
 #include "WorkGroupTracker.h"
+#include "ocl_debug_model/OCLVectorTypes.h"
 #include "ocldbg/DebuggerContext.h"
 
 #include <array>
@@ -11,7 +12,10 @@
 #include <lldb/API/SBError.h>
 #include <lldb/API/SBValue.h>
 #include <map>
+#include <optional>
 #include <stdexcept>
+#include <string_view>
+#include <vector>
 
 // TODO (Person C): implement all methods below.
 //
@@ -48,18 +52,41 @@ VarValue eval_from_sbvalue(lldb::SBValue val, const VarInfo &var) {
     if (val_str != nullptr) {
         result.value_str = val_str;
         result.available = true;
-    } else {
-        const char *summary = val.GetSummary();
-        if (summary != nullptr) {
-            result.value_str = summary;
-            result.available = true;
-        } else if (val.GetType().IsPointerType()) {
-            lldb::addr_t addr = val.GetValueAsUnsigned(0);
-            std::array<char, 32> buf{};
-            std::snprintf(buf.data(), buf.size(), "0x%lx", static_cast<unsigned long>(addr));
-            result.value_str = buf.data();
-            result.available = true;
+        return result;
+    }
+
+    // OpenCL vector locals surface as an LLDB aggregate (the DWARF encodes
+    // them as a DW_AT_GNU_vector array): GetValue()/GetSummary() are null,
+    // but LLDB still exposes each lane as a child SBValue. Gated on the
+    // OpenCL vector type name so plain structs keep falling through to the
+    // summary/pointer handling below, unchanged.
+    uint32_t num_children = val.GetNumChildren();
+    if (num_children > 0 && parse_ocl_vector_type(result.type_name).has_value()) {
+        std::string vec_str = "(";
+        for (uint32_t i = 0; i < num_children; ++i) {
+            if (i > 0) {
+                vec_str += ", ";
+            }
+            lldb::SBValue lane = val.GetChildAtIndex(i);
+            const char *lane_str = lane.IsValid() ? lane.GetValue() : nullptr;
+            vec_str += (lane_str != nullptr) ? lane_str : "?";
         }
+        vec_str += ")";
+        result.value_str = vec_str;
+        result.available = true;
+        return result;
+    }
+
+    const char *summary = val.GetSummary();
+    if (summary != nullptr) {
+        result.value_str = summary;
+        result.available = true;
+    } else if (val.GetType().IsPointerType()) {
+        lldb::addr_t addr = val.GetValueAsUnsigned(0);
+        std::array<char, 32> buf{};
+        std::snprintf(buf.data(), buf.size(), "0x%lx", static_cast<unsigned long>(addr));
+        result.value_str = buf.data();
+        result.available = true;
     }
     return result;
 }
@@ -110,6 +137,16 @@ VarValue eval_from_memory(const lldb::SBFrame &frame, lldb::addr_t addr, const V
     }
 
     lldb::SBError err;
+    if (auto vt = parse_ocl_vector_type(var.type_name)) {
+        size_t needed = vt->elem_size * ocl_vector_storage_count(*vt);
+        std::vector<uint8_t> buf(needed);
+        size_t got = process.ReadMemory(addr, buf.data(), needed, err);
+        if (err.Success() && got == needed) {
+            result.value_str = format_ocl_vector_bytes(buf, *vt);
+            result.available = true;
+        }
+        return result;
+    }
     if (var.type_name == "int" || var.type_name == "signed int") {
         int32_t ival = 0;
         process.ReadMemory(addr, &ival, sizeof(ival), err);
@@ -151,6 +188,25 @@ VarValue eval_from_register(lldb::SBFrame frame, const CPUABI &abi, uint64_t dwa
 
     lldb::SBValue reg_val = frame.FindRegister(reg_name);
     if (!reg_val.IsValid()) {
+        return result;
+    }
+
+    if (auto vt = parse_ocl_vector_type(var.type_name)) {
+        lldb::SBData data = reg_val.GetData();
+        size_t needed = vt->elem_size * ocl_vector_storage_count(*vt);
+        if (data.GetByteSize() < needed) {
+            return result; // vector doesn't fit in this register (e.g. float8/16)
+        }
+        std::vector<uint8_t> buf(needed);
+        lldb::SBError data_err;
+        for (size_t i = 0; i < needed; ++i) {
+            buf[i] = data.GetUnsignedInt8(data_err, i);
+            if (data_err.Fail()) {
+                return result;
+            }
+        }
+        result.value_str = format_ocl_vector_bytes(buf, *vt);
+        result.available = true;
         return result;
     }
 
@@ -199,6 +255,16 @@ VarValue eval_implicit_value(const std::vector<uint8_t> &expr, const VarInfo &va
         return result;
     }
 
+    if (auto vt = parse_ocl_vector_type(var.type_name)) {
+        size_t needed = vt->elem_size * ocl_vector_storage_count(*vt);
+        if (len == needed) {
+            std::vector<uint8_t> buf(expr.begin() + 2,
+                                     expr.begin() + 2 + static_cast<std::ptrdiff_t>(len));
+            result.value_str = format_ocl_vector_bytes(buf, *vt);
+            result.available = true;
+        }
+        return result;
+    }
     if (var.type_name == "float" && len == sizeof(float)) {
         float fval = 0.0F;
         std::memcpy(&fval, &expr[2], sizeof(float));

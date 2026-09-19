@@ -39,7 +39,13 @@ def main():
     kernel_name = sys.argv[4]
 
     env = dict(os.environ)
-    p = subprocess.Popen([ocldbg_bin, "--dap"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
+    # The backend comes from the environment so the positional arguments, which
+    # are forwarded to the host program, keep their meaning.
+    cmd = [ocldbg_bin, "--dap"]
+    backend = env.get("OCLDBG_DAP_BACKEND")
+    if backend:
+        cmd += ["--backend", backend]
+    p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env)
 
     # 1. Initialize
     send_msg(p, {"seq": 1, "type": "request", "command": "initialize", "arguments": {"adapterID": "ocldbg"}})

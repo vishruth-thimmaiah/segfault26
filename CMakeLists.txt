@@ -179,6 +179,7 @@ add_library(ocldbg_core STATIC
     ocldbg/dwarf/DWARFSourceModel.cpp
     ocldbg/dwarf/LocationExprEval.cpp
     ocldbg/ocl_debug_model/OCLAddressSpaces.cpp
+    ocldbg/ocl_debug_model/OCLVectorTypes.cpp
     ocldbg/ocl_debug_model/OCLVariableResolver.cpp
     ocldbg/backends/cpu/PoclCPUBackend.cpp
     ocldbg/backends/cpu/WIContextExtractor.cpp

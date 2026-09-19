@@ -700,6 +700,7 @@ bool DebuggerContext::select_work_item(const Size3 &global_id) {
     ctx->host_thread_id = matched_thread.GetThreadID();
     ctx->thread = matched_thread;
     ctx->frame = frame;
+    WIContextExtractor::set_source_location(frame, wi);
     wi.exec_ctx_storage = ctx;
     wi.exec_ctx = ctx.get();
 
@@ -770,6 +771,7 @@ std::vector<OCLWorkItem> DebuggerContext::list_stopped_work_items() const {
         ctx->host_thread_id = t.GetThreadID();
         ctx->thread = t;
         ctx->frame = f;
+        WIContextExtractor::set_source_location(f, wi);
         wi.exec_ctx_storage = ctx;
         wi.exec_ctx = ctx.get();
 
@@ -939,6 +941,7 @@ std::vector<VarValue> DebuggerContext::inspect_current_frame_variables() {
         ctx->host_thread_id = thread.GetThreadID();
         ctx->frame = frame;
         ctx->thread = thread;
+        WIContextExtractor::set_source_location(frame, wi);
         wi.exec_ctx_storage = ctx;
         wi.exec_ctx = ctx.get();
     }
