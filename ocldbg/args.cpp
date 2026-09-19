@@ -37,7 +37,8 @@ bool parse_flag_opts(ProgramArgs &args, std::string_view arg, int &i, int argc, 
         parse_vector_opt(arg, "-o", "--one-line", i, argc, argv, args.one_line_after) ||
         parse_vector_opt(arg, "", "--print", i, argc, argv, args.print_exprs) ||
         parse_string_opt(arg, "", "--backend", i, argc, argv, args.backend_name) ||
-        parse_string_opt(arg, "", "--break-file", i, argc, argv, args.break_file)) {
+        parse_string_opt(arg, "", "--break-file", i, argc, argv, args.break_file) ||
+        parse_string_opt(arg, "", "--read-memory", i, argc, argv, args.read_memory)) {
         return true;
     }
 
@@ -165,6 +166,8 @@ void print_help() {
         "  --break-at <line>  Break at kernel source line (e.g. --break-at 17)\n"
         "  --break-file <f>   Source file of the breakpoint (accelerator backend)\n"
         "  --break-for <x>    Stop at breakpoint x times (default: every time)\n"
+        "  --read-memory <a>[:<n>]  Read n bytes (default 16) of accelerator global memory at hex "
+        "address a at each stop (accelerator backend)\n"
         "  --print <expr>     Evaluate expression at each stop (oclgrind and accelerator "
         "backends; repeatable)\n"
         "  --backend <name>   Execution backend: cpu|oclgrind|accelerator (default: cpu; "

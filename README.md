@@ -139,8 +139,13 @@ is supported, and stepping is not.
 
 Two builds of LLDB have been used:
 
-- **Upstream (LLDB 23 or later)** ships the framework and only a mock plugin
-  (`-DLLDB_ENABLE_MOCK_ACCELERATOR_PLUGIN=ON`). It exercises the flow without a GPU.
+- **Upstream LLDB `main`** (primary target) has the framework, generic address spaces
+  and the dynamic-loader protocol, and only a mock plugin
+  (`-DLLDB_ENABLE_MOCK_ACCELERATOR_PLUGIN=ON`). It exercises the whole flow without a
+  GPU, including reading accelerator memory through an address space. No AMD plugin is
+  upstream yet; its building blocks (AMD architectures in `ArchSpec`, DWARF pieces,
+  address spaces) are landing, and the plugin itself is expected from Meta. When it
+  lands this backend should work with it unchanged.
 - **The `llvm-server-plugins` branch of `clayborg/llvm-project`** has the AMD GPU
   plugin (`-DLLDB_ENABLE_AMDGPU_PLUGIN=ON -DROCM_PATH=/opt/rocm`). It uses an older
   protocol than upstream, so its `liblldb` and `lldb-server` must be used together.
@@ -166,7 +171,7 @@ Known limits: work-item ids are the thread's position in LLDB's list, not NDRang
 coordinates. Continuing past a breakpoint that many lanes hit does not finish in the
 AMD plugin, which does not use amd-dbgapi's displaced stepping, so use `--break-for 1`
 (a resume that does not finish is reported after `OCLDBG_ACCELERATOR_TIMEOUT_SECONDS`,
-120 by default). Reading GPU memory needs the plugin branch's `SBProcess::ReadMemoryFromSpec`.
+120 by default). `--read-memory <hex address>[:<bytes>]` reads accelerator global memory at each stop, through the plugin's "global" address space (upstream `SBProcessAddress`, or `ReadMemoryFromSpec` on the plugin branch); a plain read would reach only the host.
 
 `tests/accelerator/` has an end-to-end test for each. They run only when
 `OCLDBG_MOCK_ACCELERATOR_SERVER` (mock), or `OCLDBG_AMD_ACCELERATOR_SERVER` and

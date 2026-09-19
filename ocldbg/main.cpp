@@ -87,6 +87,7 @@ int run_dry_run(const ocldbg::ProgramArgs &args) {
             .break_file = args.break_file,
             .break_at = args.break_at,
             .break_for = args.break_for,
+            .read_memory = args.read_memory,
             .print_exprs = args.print_exprs,
         });
         ocldbg::DebuggerContext::terminate();

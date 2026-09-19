@@ -2,8 +2,12 @@
 
 #include "LLDBAcceleratorBackend.h"
 
+#include <charconv>
+#include <cstdint>
 #include <format>
 #include <iostream>
+#include <optional>
+#include <string_view>
 
 namespace ocldbg {
 
@@ -37,11 +41,63 @@ void print_work_item(LLDBAcceleratorBackend &backend, const OCLWorkItem &wi,
     }
 }
 
+struct MemoryRead {
+    uint64_t address = 0;
+    size_t length = 16;
+};
+
+/// Parses "<hex address>[:<decimal byte count>]", with an optional 0x prefix.
+std::optional<MemoryRead> parse_memory_read(std::string_view spec) {
+    MemoryRead read;
+    const size_t colon = spec.find(':');
+    std::string_view address = spec.substr(0, colon);
+    address.remove_prefix(address.starts_with("0x") ? 2 : 0);
+    auto parsed =
+        std::from_chars(address.data(), address.data() + address.size(), read.address, 16);
+    if (address.empty() || parsed.ec != std::errc() ||
+        parsed.ptr != address.data() + address.size()) {
+        return std::nullopt;
+    }
+    if (colon != std::string_view::npos) {
+        const std::string_view length = spec.substr(colon + 1);
+        parsed = std::from_chars(length.data(), length.data() + length.size(), read.length);
+        if (parsed.ec != std::errc() || parsed.ptr != length.data() + length.size() ||
+            read.length == 0) {
+            return std::nullopt;
+        }
+    }
+    return read;
+}
+
+void print_memory(LLDBAcceleratorBackend &backend, const MemoryRead &read) {
+    std::vector<uint8_t> bytes(read.length);
+    const size_t count = backend.read_global_memory(read.address, bytes.data(), bytes.size());
+    if (count == 0) {
+        std::cout << std::format("[ocldbg] Read of {} byte(s) at {:#x} failed\n", read.length,
+                                 read.address);
+        return;
+    }
+    std::string hex;
+    for (size_t i = 0; i < count; ++i) {
+        hex += std::format("{}{:02x}", i == 0 ? "" : " ", bytes[i]);
+    }
+    std::cout << std::format("[ocldbg] Read {} byte(s) at {:#x}: {}\n", count, read.address, hex);
+}
+
 } // namespace
 
 int run_accelerator_session(const AcceleratorSessionConfig &config) {
     // LLDB writes to the same stdout, so flush each line to keep the order.
     std::cout << std::unitbuf;
+    std::optional<MemoryRead> memory_read;
+    if (!config.read_memory.empty()) {
+        memory_read = parse_memory_read(config.read_memory);
+        if (!memory_read) {
+            std::cerr << "error: --read-memory expects <hex address>[:<bytes>]\n";
+            return 1;
+        }
+    }
+
     LLDBAcceleratorBackend backend;
     size_t reported_stops = 0;
     size_t hits = 0;
@@ -60,6 +116,9 @@ int run_accelerator_session(const AcceleratorSessionConfig &config) {
         for (const auto &wi : stop.visible) {
             print_work_item(backend, wi, config.print_exprs);
         }
+        if (memory_read) {
+            print_memory(backend, *memory_read);
+        }
     });
 
     std::cout << std::format("[ocldbg] Launching {} under LLDB with an accelerator plugin\n",
@@ -75,6 +134,9 @@ int run_accelerator_session(const AcceleratorSessionConfig &config) {
                              backend.accelerator_triple(), connected.size());
     for (const auto &wi : connected) {
         print_work_item(backend, wi, config.print_exprs);
+    }
+    if (memory_read) {
+        print_memory(backend, *memory_read);
     }
 
     backend.resume();

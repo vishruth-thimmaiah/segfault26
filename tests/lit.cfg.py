@@ -52,8 +52,9 @@ if oclgrind_plugin and os.path.exists(oclgrind_plugin):
     config.available_features.add("oclgrind")
 
 # The accelerator backend needs an lldb-server built with an accelerator plugin.
-# Only LLDB 23 and later can build the mock one, so distro packages lack it;
-# tests that drive it declare REQUIRES: mock-accelerator.
+# The mock one comes from upstream LLDB main (address spaces landed in September
+# 2026), so distro packages lack it; tests that drive it declare
+# REQUIRES: mock-accelerator.
 mock_accelerator_server = os.environ.get("OCLDBG_MOCK_ACCELERATOR_SERVER", "")
 if mock_accelerator_server and os.path.exists(mock_accelerator_server):
     config.available_features.add("mock-accelerator")

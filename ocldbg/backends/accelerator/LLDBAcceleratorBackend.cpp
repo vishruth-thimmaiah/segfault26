@@ -491,7 +491,17 @@ size_t LLDBAcceleratorBackend::read_global_memory(HostAddress addr, void *buf, s
         return 0;
     }
     lldb::SBError error;
-#ifdef OCLDBG_HAVE_SB_ADDRESS_SPEC
+#if defined(OCLDBG_HAVE_SB_PROCESS_ADDRESS)
+    // A plain read goes to the host-style default address space. Use the plugin's
+    // "global" space when it names one, and the default space otherwise.
+    const lldb::addr_space_t space = state.accel_process.GetAddressSpaceID("global", error);
+    if (error.Success() && space != LLDB_INVALID_ADDRESS_SPACE_ID) {
+        return state.accel_process.ReadMemory(lldb::SBProcessAddress(addr, space), buf, length,
+                                              error);
+    }
+    error.Clear();
+    return state.accel_process.ReadMemory(addr, buf, length, error);
+#elif defined(OCLDBG_HAVE_SB_ADDRESS_SPEC)
     // A plain read goes to the host process, which cannot see device memory. The
     // address space is taken relative to a thread; the client crashes without one.
     lldb::SBThread thread = state.accel_process.GetSelectedThread();

@@ -1,12 +1,13 @@
 // The mock plugin scopes one of its breakpoints to a module named a.out.
 // RUN: mkdir -p %t.d
 // RUN: %clangxx -g %s -o %t.d/a.out
-// RUN: env LLDB_DEBUGSERVER_PATH=%mock_accelerator_server %ocldbg --dry-run --backend accelerator --print r0 --print pc --print not_a_register %t.d/a.out | %FileCheck %s
+// RUN: env LLDB_DEBUGSERVER_PATH=%mock_accelerator_server %ocldbg --dry-run --backend accelerator --print r0 --print pc --print not_a_register --read-memory 0x1000:4 %t.d/a.out | %FileCheck %s
 // REQUIRES: mock-accelerator
 
 // The mock accelerator plugin in lldb-server sets its breakpoints on these
 // functions and, at the connect hook, asks LLDB to create a second target for
-// the accelerator. The mock has one thread whose register N reads 0x1000 + N.
+// the accelerator. The mock has one thread whose register N reads 0x1000 + N,
+// and answers a read of its "global" address space (id 1) with the id in byte 0.
 extern "C" {
 void mock_gpu_accelerator_initialize() {}
 void mock_gpu_accelerator_connect() {}
@@ -31,6 +32,7 @@ int main() {
 // CHECK: [ocldbg]     r0 = 0x0000000000001000
 // CHECK: [ocldbg]     pc = 0x0000000000001004
 // CHECK: [ocldbg]     not_a_register = <unavailable>
+// CHECK: [ocldbg] Read 4 byte(s) at 0x1000: 01 00 00 00
 // CHECK: [ocldbg] Accelerator plugin stopped the host in mock_gpu_accelerator_compute
 // CHECK: [ocldbg] Accelerator plugin stopped the host in mock_gpu_accelerator_finish
 // CHECK: [ocldbg] Host exited with status 0
