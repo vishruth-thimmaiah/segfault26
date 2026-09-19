@@ -167,7 +167,7 @@ void print_help() {
         "  --break-for <x>    Stop at breakpoint x times (default: every time)\n"
         "  --print <expr>     Evaluate expression at each stop (oclgrind and accelerator "
         "backends; repeatable)\n"
-        "  --backend <name>   Execution backend: cpu|oclgrind|amd|accelerator (default: cpu; "
+        "  --backend <name>   Execution backend: cpu|oclgrind|accelerator (default: cpu; "
         "accelerator needs --dry-run)\n"
         "  --dap              Run DAP server over stdio\n"
         "  --port <port>      Listen on TCP port for DAP client (default: stdio)\n"

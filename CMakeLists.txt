@@ -110,42 +110,6 @@ find_library(OCLGRIND_LIB NAMES oclgrind
     PATH_SUFFIXES lib
 )
 
-# -----------------------------------------------------------------------------
-# AMD GPU backend (optional)
-#
-# Unlike Oclgrind, whose SDK dependency is isolated to the injected plugin
-# .so, AMDBackend calls libamd-dbgapi (packaged as librocm-dbgapi.so) directly,
-# so its translation units require amd-dbgapi.h to compile at all -- they are
-# only added to ocldbg_core when the SDK is found, and call sites elsewhere
-# guard on the OCLDBG_HAVE_AMD_DBGAPI compile definition.
-#
-# Defaults to /opt/rocm, the standard ROCm install location, so this
-# auto-detects on any ROCm-enabled machine without needing -DAMD_DBGAPI_ROOT.
-# -----------------------------------------------------------------------------
-set(AMD_DBGAPI_ROOT "/opt/rocm" CACHE PATH "Root of the ROCm/amd-dbgapi installation")
-
-find_path(AMD_DBGAPI_INCLUDE_DIR "amd-dbgapi/amd-dbgapi.h"
-    HINTS ${AMD_DBGAPI_ROOT} ENV AMD_DBGAPI_ROOT
-    PATH_SUFFIXES include
-)
-find_library(AMD_DBGAPI_LIB NAMES rocm-dbgapi
-    HINTS ${AMD_DBGAPI_ROOT} ENV AMD_DBGAPI_ROOT
-    PATH_SUFFIXES lib
-)
-
-set(OCLDBG_AMD_SOURCES "")
-if (AMD_DBGAPI_INCLUDE_DIR AND AMD_DBGAPI_LIB)
-    message(STATUS "Found amd-dbgapi: ${AMD_DBGAPI_LIB}")
-    set(OCLDBG_AMD_SOURCES
-        ocldbg/backends/amd/AMDDbgApiSession.cpp
-        ocldbg/backends/amd/AMDBackend.cpp
-        ocldbg/backends/amd/AMDSession.cpp
-    )
-else()
-    message(STATUS "amd-dbgapi not found; the AMD backend will not be built. "
-                    "Set -DAMD_DBGAPI_ROOT=/path/to/rocm if it's installed elsewhere.")
-endif()
-
 if (OCLGRIND_INCLUDE_DIR AND OCLGRIND_LIB)
     message(STATUS "Found Oclgrind library: ${OCLGRIND_LIB}")
     get_filename_component(OCLGRIND_LIB_DIR "${OCLGRIND_LIB}" DIRECTORY)
@@ -210,7 +174,6 @@ add_library(ocldbg_core STATIC
     ocldbg/backends/accelerator/LLDBAcceleratorBackend.cpp
     ocldbg/backends/accelerator/LLDBAcceleratorSession.cpp
     ocldbg/dap/DAPServer.cpp
-    ${OCLDBG_AMD_SOURCES}
 )
 target_compile_definitions(ocldbg_core PRIVATE
     OCLDBG_GIT_COMMIT="${OCLDBG_GIT_COMMIT}"
@@ -218,14 +181,6 @@ target_compile_definitions(ocldbg_core PRIVATE
     OCLDBG_OCLGRIND_PLUGIN_PATH="${OCLDBG_OCLGRIND_PLUGIN_PATH}"
     OCLDBG_OCLGRIND_LIB_DIR="${OCLGRIND_LIB_DIR}"
 )
-if (OCLDBG_AMD_SOURCES)
-    target_compile_definitions(ocldbg_core PUBLIC OCLDBG_HAVE_AMD_DBGAPI=1)
-    target_include_directories(ocldbg_core PRIVATE ${AMD_DBGAPI_INCLUDE_DIR})
-    # AMD_DBGAPI_LIB is a find_library() cache var: when amd-dbgapi isn't
-    # found it holds "AMD_DBGAPI_LIB-NOTFOUND", which target_link_libraries
-    # rejects outright -- only reference it when actually found.
-    target_link_libraries(ocldbg_core PUBLIC ${AMD_DBGAPI_LIB})
-endif()
 if (OCLDBG_HAVE_SB_ADDRESS_SPEC)
     target_compile_definitions(ocldbg_core PRIVATE OCLDBG_HAVE_SB_ADDRESS_SPEC)
 endif()

@@ -11,10 +11,6 @@
 #include "ocldbg/DebuggerContext.h"
 #include "ocldbg/Types.h"
 
-#ifdef OCLDBG_HAVE_AMD_DBGAPI
-#include "backends/amd/AMDSession.h"
-#endif
-
 #include <format>
 #include <iostream>
 #include <string>
@@ -77,22 +73,6 @@ int run_dry_run(const ocldbg::ProgramArgs &args) {
             .break_for = args.break_for,
             .print_exprs = args.print_exprs,
         });
-    }
-
-    // amd-dbgapi attaches to the host process directly (like Oclgrind, no
-    // LLDB); unlike Oclgrind it has no source-line breakpoint support yet
-    // (see AMDBackend.h), so this reports whatever wave it finds halted.
-    if (args.backend_name == "amd") {
-#ifdef OCLDBG_HAVE_AMD_DBGAPI
-        return ocldbg::run_amd_session(ocldbg::AMDSessionConfig{
-            .host_binary = args.host_binary,
-            .host_args = args.host_args,
-        });
-#else
-        std::cerr << "[ocldbg] Built without AMD GPU support; rebuild with amd-dbgapi installed "
-                     "(defaults to /opt/rocm, or set -DAMD_DBGAPI_ROOT=...)\n";
-        return 1;
-#endif
     }
 
     if (args.backend_name == "accelerator") {

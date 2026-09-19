@@ -18,10 +18,8 @@ config.test_exec_root = getattr(
     config, "segfault26_binary_root", os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "build"))
 )
 
-# Directories that do not contain lit tests. amd_backend/ holds manual
-# verification kernels for `ocldbg --backend amd` (needs real AMD GPU +
-# ROCm/amd-dbgapi, which CI doesn't have); no RUN: lines by design.
-config.excludes = ["kernels", "integration", "amd_backend"]
+# Directories that do not contain lit tests
+config.excludes = ["kernels", "integration"]
 
 # Resolve test_host_runner
 host_runner = getattr(config, "test_host_runner", None)

@@ -20,7 +20,7 @@
 >
 > **Branch note (as of this refresh):** this copy of CODEMAP.md lives on
 > `amd-gpu-backend`, an unmerged feature branch (PR #25) rebased onto current
-> `main`. Sections describing the AMD backends (`backends/amd/`, `backends/accelerator/`) describe code
+> `main`. Sections describing the accelerator backend (`backends/accelerator/`) describe code
 > that is NOT YET on `main` — check `gh pr view 25` / `git log main` for
 > current merge status before assuming it's there. Everything else in this
 > file describes `main` as of commit `7338065` plus this branch's rebase.
@@ -30,7 +30,7 @@
 `ocldbg` — a source-level debugger for OpenCL/GPU kernels on three targets:
 pocl's CPU device (via LLDB/ptrace, x86_64 *and* aarch64 hosts), the Oclgrind
 LLVM-IR interpreter (via a custom plugin + socket protocol), and (this
-branch, unmerged) real AMD GPU hardware via amd-dbgapi. Exposes both an
+branch, unmerged) real AMD GPU hardware via LLDB's accelerator-plugin framework. Exposes both an
 LLDB-passthrough CLI and a real Debug Adapter Protocol server (VS Code
 extension included). C++20, CMake. Full design rationale lives in
 `docs/PLANNING.md` (875 lines, now significantly stale — see §9).
@@ -66,9 +66,6 @@ a line number below.
 | `tests/dap/dap_driver.py` + `dap_session.cl` | ✅ done, **new**, passing | Real DAP smoke test: drives `ocldbg --dap` over a subprocess pipe with the actual Content-Length framing |
 | `.vscode/` + `extensions/vscode-ocldbg/` | ✅ present, **new** | A real (if minimal) VS Code extension (`extension.js`) registering `ocldbg` as a DAP debug type, plus `launch.json`/`tasks.json` wiring a "Debug Current Open Kernel" config that builds and launches through it |
 | `scripts/demo.sh` | ⚠️ minimal, unchanged | Just builds + runs `ocldbg` with no args |
-| `AMDDbgApiSession` (backends/amd, **unmerged PR #25**) | ✅ done, hardware-verified | launch/detach/resume-until-wave-stop/read_memory all real, verified against a live AMD Radeon RX 9060 XT (gfx1200) — this dev sandbox has real ROCm 7.2.1 + amd-dbgapi at `/opt/rocm`, not typical, check before assuming another box has this. Caught a real memory-violation fault from a genuinely buggy kernel end-to-end. Passes `run-clang-tidy` clean (see §5b) |
-| `AMDBackend` / `AMDLocationBackend` (backends/amd, **unmerged PR #25**) | ⚠️ partial, real | `launch/detach/resume/on_stop/read_global_memory/location_backend` real. `set_breakpoint/remove_breakpoint/step_over/step_in` **not implemented** (open question — amd-dbgapi's `insert_breakpoint` callback is for the library's own host-side tracking, not a GPU breakpoint API). `select_work_item` not lane-precise. DWARF→register path wired but unverified on hardware |
-| `AMDSession` (`run_amd_session`, **unmerged PR #25**) | ✅ done | Standalone driver for `--backend amd --dry-run` |
 | `LLDBAcceleratorBackend` (backends/accelerator, **unmerged PR #25**) | ✅ done, hardware-verified | Drives LLDB's accelerator-plugin framework: an lldb-server plugin makes LLDB create a **second SBTarget** for the accelerator; its threads become work-items. Verified on the real RX 9060 XT (gfx1200) with the `clayborg/llvm-project` `llvm-server-plugins` AMD plugin (source breakpoint in a HIP kernel, 64 lanes with locals, GPU memory read) and on upstream LLDB 23's mock plugin. **Needs an lldb-server built with a plugin** (`LLDB_DEBUGSERVER_PATH`); upstream has only the mock, the AMD plugin is out of tree and needed 2 local fixes (see §5c). No stepping. Compiles vs LLDB 22/23/fork headers |
 | `LLDBAcceleratorSession` (`run_accelerator_session`, **unmerged PR #25**) | ✅ done | Driver for `--dry-run --backend accelerator [--break-file F --break-at N --break-for K --print X]` |
 
@@ -142,21 +139,7 @@ segfault26/
 │   │   │   ├── OclgrindBackend.h/.cpp    ✅ Backend impl: fork/exec host, socket IPC
 │   │   │   ├── OclgrindSession.h/.cpp    ✅ run_oclgrind_session() — used by --dry-run --backend oclgrind
 │   │   │   └── plugin/DebugPlugin.h/.cpp ✅ injected oclgrind::Plugin (separate .so, needs OCLGRIND_ROOT)
-│   │   └── amd/                          UNMERGED (PR #25). Only compiled into ocldbg_core if
-│   │       │                             amd-dbgapi found (needs the vendor header at compile
-│   │       │                             time, unlike Oclgrind's split design)
-│   │       ├── AMDDbgApiSession.h/.cpp   ✅ hardware-verified: fork/PTRACE_TRACEME/execv + full
-│   │       │                             amd_dbgapi_callbacks_s impl (real int3 breakpoint injection via
-│   │       │                             /proc/<pid>/mem -- for the library's OWN host-side tracking
-│   │       │                             breakpoints, not GPU ones) + ptrace wait-loop + wave
-│   │       │                             discovery/halt/PC/register read. See §5b.
-│   │       ├── AMDBackend.h/.cpp         ⚠️ Backend impl: launch/detach/resume/read_global_memory real;
-│   │       │                             set_breakpoint/step_over/step_in NOT implemented (open question,
-│   │       │                             see header); select_work_item not lane-precise
-│   │       ├── AMDLocationBackend.h      interface decl; impl at bottom of AMDBackend.cpp, DWARF->register
-│   │       │                             path wired but unverified on hardware
-│   │       └── AMDSession.h/.cpp         ✅ run_amd_session() — used by --dry-run --backend amd
-│   │   ├── accelerator/  UNMERGED (PR #25). LLDB accelerator-plugin backend, see §5c
+│   │   └── accelerator/  UNMERGED (PR #25). LLDB accelerator-plugin backend, see §5c
 │   │   │   ├── LLDBAcceleratorBackend.h/.cpp  ✅ Backend impl (pimpl `AcceleratorState` in the .cpp)
 │   │   │   ├── AcceleratorExecContext.h       `{ SBThread thread }` behind OCLWorkItem::exec_ctx
 │   │   │   ├── AcceleratorLocationBackend.h   LocationBackend: FindVariable then FindRegister on the GPU frame
@@ -200,20 +183,12 @@ segfault26/
 │   ├── workgroup_tracking/workgroup_bounds.cl
 │   ├── integration/test_breakpoint.py   ❌ dead stub, superseded by tests/dap/ — see §1
 │   ├── lit.cfg.py / lit.site.cfg.py.in  LIT harness config; `config.excludes` lists dirs with
-│   │                                   no RUN: lines (kernels, integration, and — on this
-│   │                                   branch only — amd_backend)
-│   ├── accelerator/              UNMERGED (PR #25). Lit, env-gated: `mock_accelerator.cpp`
+│   ├── lit.cfg.py / lit.site.cfg.py.in  LIT harness config; `config.excludes` lists dirs with
+│   │                                   no RUN: lines (kernels, integration)
+│   └── accelerator/              UNMERGED (PR #25). Lit, env-gated: `mock_accelerator.cpp`
 │   │                             (needs OCLDBG_MOCK_ACCELERATOR_SERVER) and `amd_gpu.cpp` (needs
 │   │                             OCLDBG_AMD_ACCELERATOR_SERVER + OCLDBG_AMD_GPU_ARCH + hipcc + a GPU).
 │   │                             UNSUPPORTED, not failing, without them.
-│   └── amd_backend/              UNMERGED (PR #25). HIP kernels for `ocldbg --backend amd`,
-│       │                         NOT lit-wired (no HIP language in CMake; needs real AMD GPU).
-│       │                         Manual: build with `hipcc`, run
-│       │                         `./build/ocldbg --backend amd --dry-run <bin>`.
-│       ├── spin_kernel.cpp       correct kernel, busy-loops for an observable halt window
-│       └── oob_write_kernel.cpp  GPU analog of reduction_sum.cl's bug: wrong index stride
-│                                 walks out of bounds -> real hipErrorIllegalAddress. ocldbg's
-│                                 AMD backend correctly reports MEMORY_VIOLATION, verified live.
 │
 └── scripts/
     ├── build.sh                  cmake configure+build wrapper (Debug default)
@@ -230,7 +205,7 @@ KernelLaunchInfo { kernel_name: string, work_dim: size_t = 1, global_size, local
                    num_groups, work_groups[], sample_work_items[] }   // kernel_name/work_dim are new
 SourceLocation { file: string, line: unsigned }
 HostAddress = uint64_t
-ExecCtxHandle = void*   // backend-specific: CPUExecContext* | OclgrindExecContext* | AMDExecContext*
+ExecCtxHandle = void*   // backend-specific: CPUExecContext* | OclgrindExecContext* | AcceleratorExecContext*
 
 OCLWorkItem { global_id, local_id, group_id, work_dim: size_t = 0 /* NEW, 0=unset */,
               exec_ctx: ExecCtxHandle, exec_ctx_storage: shared_ptr<void> }
@@ -244,16 +219,15 @@ VarInfo  { name, type_name, address_space, location_pc, dwarf_location_expr: vec
 
 `CPUExecContext` (backends/cpu/CPUExecContext.h): `{ host_thread_id, lldb::SBFrame frame, lldb::SBThread thread }`
 `OclgrindExecContext` (backends/oclgrind/OclgrindBackend.h): `{ Size3 global_id, oclgrind_proto::LineChannel* channel }`
-`AMDExecContext` (backends/amd/AMDBackend.h, **unmerged**): `{ amd_dbgapi_wave_id_t wave, AMDDbgApiSession* session }`
-`AMDWaveInfo` (backends/amd/AMDDbgApiSession.h, **unmerged**): `{ amd_dbgapi_wave_id_t wave, amd_dbgapi_global_address_t pc, uint32_t stop_reason }` — `stop_reason` is the raw `AMD_DBGAPI_WAVE_STOP_REASON_*` bitmask; 0 means ocldbg's own `wave_stop()` halted it, nonzero means the hardware did (e.g. `MEMORY_VIOLATION`).
+`AcceleratorExecContext` (backends/accelerator/AcceleratorExecContext.h, **unmerged**): `{ lldb::SBThread thread }` — one thread of the accelerator target.
 
 ## 4. Interfaces / abstract classes
 
-**`Backend`** (`include/ocldbg/Backend.h`) — pure virtual, implemented by `PoclCPUBackend` (real, wraps `DebuggerContext`), `OclgrindBackend` (real), `AMDBackend` (real except set_breakpoint/step_over/step_in, unmerged):
+**`Backend`** (`include/ocldbg/Backend.h`) — pure virtual, implemented by `PoclCPUBackend` (real, wraps `DebuggerContext`), `OclgrindBackend` (real), `LLDBAcceleratorBackend` (real except step_over/step_in, unmerged):
 `launch, detach, set_breakpoint, remove_breakpoint, on_stop, resume, step_over, step_in, select_work_item, location_backend, read_global_memory`
 
 **`LocationBackend`** (`include/ocldbg/LocationBackend.h`) — one method: `evaluate(VarInfo, ExecCtxHandle) -> VarValue`.
-Implementations: `CPULocationBackend` (impl in `PoclCPUBackend.cpp`), `OclgrindLocationBackend` (impl at bottom of `OclgrindBackend.cpp`), `AMDLocationBackend` (impl at bottom of `AMDBackend.cpp`, unmerged, DWARF→register path unverified).
+Implementations: `CPULocationBackend` (impl in `PoclCPUBackend.cpp`), `OclgrindLocationBackend` (impl at bottom of `OclgrindBackend.cpp`), `AcceleratorLocationBackend` (impl at bottom of `LLDBAcceleratorBackend.cpp`, unmerged: `FindVariable`, then `FindRegister`, on the selected GPU frame).
 
 **`CPUABI`** (`backends/cpu/CPUABI.h/.cpp`) — **restructured this cycle**: most logic is now a shared, non-virtual base implementation, not a pure-virtual interface:
 ```
@@ -326,84 +300,27 @@ Socket path env var: `OCLDBG_OCLGRIND_SOCKET`. Host process launched with `LD_PR
 
 `DebugPlugin` internals: `should_halt()` dedupes repeated-line hits per work-item index, 3 run modes (`kRunning`/`kStepIn`/`kStepOver`), `isThreadSafe() = false` (deterministic WI order). Variable read captures `WorkItem::printExpression()`'s stdout via `streambuf` swap (no structured value-return API).
 
-## 5b. AMD backend (unmerged, PR #25): amd-dbgapi callback contract (`backends/amd/AMDDbgApiSession.cpp`)
+## 5b. Lessons kept from the removed amd-dbgapi backend (see git history, commit 65cb8d7)
 
-Unlike Oclgrind (a cooperating in-process plugin) or pocl (host threads under
-LLDB/ptrace directly), amd-dbgapi is a **passive library that does no process
-control itself** — it tells the client what to do via `amd_dbgapi_callbacks_s`
-and the client (`AMDDbgApiSession`) must actually do it via raw ptrace:
+A hand-rolled amd-dbgapi client (`backends/amd/`, `--backend amd`) was built, verified on a real
+GPU, and then removed in favour of LLDB's accelerator plugins (§5c). Two things are worth keeping:
 
-```
-amd_dbgapi_callbacks_s (all implemented as AMDDbgApiSession private statics,
-since they're plain C function pointers with no `this`; client_process_id is
-always `impl_.get()`, cast back inside each callback):
-  allocate_memory / deallocate_memory     malloc/free
-  client_process_get_info                 answers OS_PID; declines CORE_STATE
-  insert_breakpoint / remove_breakpoint   REAL int3 (0xCC) patch over
-                                           /proc/<pid>/mem, save/restore
-                                           original byte -- this is for the
-                                           LIBRARY's own host-side tracking
-                                           breakpoints (HSA runtime load,
-                                           code-object load), NOT a "set a
-                                           breakpoint in my kernel" API
-  xfer_global_memory                      pread/pwrite over /proc/<pid>/mem;
-                                           works for both host AND GPU-mapped
-                                           (__global buffer) addresses since
-                                           HSA unifies the address space
-  log_message                             stderr
+- amd-dbgapi is a **passive library**: it does no process control, it asks the client to via
+  `amd_dbgapi_callbacks_s`. Its `insert_breakpoint` callback is for the library's own host-side
+  tracking breakpoints (HSA runtime load, code-object load), not a way to set a GPU breakpoint.
+  `amd_dbgapi_process_agent_list`/`_queue_list`/`_wave_list` are **delta/changed-tracking** APIs:
+  an unchanged set returns `count=0, array=NULL`, not "nothing exists", so a client must cache the
+  last non-empty result and only replace it when `changed == AMD_DBGAPI_CHANGED_YES`.
 
-mem_fd_for(Impl&) is ALSO a private static member (not a free function) even
-though it's not a dbgapi callback -- Impl is a private nested type, and only
-class members can name it from outside the class body. Impl itself is kept a
-pure data aggregate (no member functions) specifically so
-misc-non-private-member-variables-in-classes doesn't fire on its public
-fields -- that check only objects to public data mixed with behavior.
-```
-
-Process control: fork + `PTRACE_TRACEME` + execv, `PTRACE_SETOPTIONS` with
-`PTRACE_O_TRACECLONE|PTRACE_O_EXITKILL`, then `amd_dbgapi_initialize` +
-`amd_dbgapi_process_attach`. `handle_stop()` runs the standard software-
-breakpoint dance (rewind RIP, restore byte, singlestep, re-arm) and calls
-`amd_dbgapi_report_breakpoint_hit()`.
-
-`resume_until_wave_stop()` is split into three private helpers (originally
-one function, refactored to satisfy clang-tidy's cognitive-complexity check):
-`drain_pending_events()` (pumps the dbgapi event queue), `refresh_known_waves()`
-(agent/queue/wave list queries), `scan_waves_for_stop(AMDWaveInfo&)` (per-wave
-state polling + proactive `wave_stop()`).
-
-**The trap that cost real debugging time:** `amd_dbgapi_process_agent_list` /
-`_queue_list` / `_wave_list` are **delta/changed-tracking** APIs — if the set
-is unchanged since your last call, they return `count=0`, `array=NULL`
-(confirmed in the header's doc comment for `agent_list`), *not* "nothing
-exists". `refresh_known_waves()` therefore retains `Impl::known_waves` and
-only replaces it when the call reports `AMD_DBGAPI_CHANGED_YES`; per-wave
-state polling then runs against the retained handles every loop iteration,
-independent of whether that iteration's list call reported a change.
-Querying `wave_list` alone every iteration without this caching silently
-reports zero waves forever, even with a kernel genuinely executing on the
-GPU (confirmed via `rocm-smi --showpids` showing the process actively using
-VRAM the whole time).
-
-`scan_waves_for_stop()` proactively calls `amd_dbgapi_wave_stop()` on the
-first non-stopped wave it finds (`Impl::wave_stop_requested` gates this to
-once); the resulting `AMDWaveInfo::stop_reason` is 0 for that user-requested
-halt, or a real `AMD_DBGAPI_WAVE_STOP_REASON_*` bitmask if the hardware
-stopped the wave itself first (e.g. `MEMORY_VIOLATION`, verified against
-`tests/amd_backend/oob_write_kernel.cpp`).
-
-**clang-tidy pitfalls hit and fixed in this file** (project's `.clang-tidy`
-has `WarningsAsErrors: '*'` over broad check groups — see §6): the
-int-as-opaque-pointer idiom (`reinterpret_cast<T*>(intptr_t)`) needed to be
-pulled into small dedicated helper functions (`client_thread_for()`) with
-`NOLINTBEGIN`/`NOLINTEND` blocks, not `NOLINTNEXTLINE` — the latter anchors
-to whatever line clang-format wraps the actual flagged token onto, which is
-NOT reliably "the next line" once a statement wraps across lines. Also:
-`run-clang-tidy` (the real driver `tidy`/CI use) and bare `clang-tidy file --`
-give **different** results for pre-existing issues in included headers
-outside the file being analyzed (e.g. `Size3` in `Types.h`) — trust
-`run-clang-tidy -p <build-dir> '<file>\.cpp$'` output, not bare `clang-tidy`,
-when deciding whether something is really your problem to fix.
+- **clang-tidy pitfalls** (project's `.clang-tidy` has `WarningsAsErrors: '*'` over broad check
+  groups, see §6): the int-as-opaque-pointer idiom (`reinterpret_cast<T*>(intptr_t)`) needs a small
+  dedicated helper with `NOLINTBEGIN`/`NOLINTEND`, not `NOLINTNEXTLINE`, because the latter anchors
+  to whatever line clang-format wraps the flagged token onto. `misc-non-private-member-variables-in-
+  classes` only objects to public data mixed with behavior, so keep a private `Impl` a pure data
+  aggregate and put helpers in the enclosing class or an anonymous namespace. `run-clang-tidy` (the
+  driver `tidy` and CI use) and bare `clang-tidy file --` give **different** results for issues in
+  included headers; trust `run-clang-tidy -p <build-dir> '<file>\.cpp$'`. CI runs a newer clang-tidy
+  than most local installs, so it can flag more (for example `atoi`).
 
 ## 5c. Accelerator backend (unmerged, PR #25): LLDB accelerator plugins (`backends/accelerator/`)
 
@@ -427,7 +344,7 @@ when deciding whether something is really your problem to fix.
 Targets:
 - `ocldbg_rt` (SHARED) — `runtime_inject/*.cpp` → `libocldbg_rt.so` (dead code, still builds)
 - `ocldbg_oclgrind_plugin` (SHARED, conditional on `OCLGRIND_ROOT`/found `oclgrind/Plugin.h`+lib) — `ocldbg/backends/oclgrind/plugin/DebugPlugin.cpp`, built with `-fno-rtti`
-- `ocldbg_core` (STATIC) — everything except `main.cpp` and the oclgrind plugin/runtime_inject; now includes `ocldbg/backends/cpu/CPUABI.cpp`, `ocldbg/backends/cpu/aarch64/AArch64CPUABI.cpp`, `ocldbg/ocl_debug_model/OCLAddressSpaces.cpp`. Links `Threads`, LLVM libs, `LLDB_LIB`, and (unmerged branch) `AMD_DBGAPI_LIB` **only inside an `if (OCLDBG_AMD_SOURCES)` guard** — linking a `find_library()` result unconditionally is a real CMake footgun: when not found it's literally the string `AMD_DBGAPI_LIB-NOTFOUND`, and `target_link_libraries` treats that as a hard configure error, not a no-op. AMD backend sources are compile-time-gated the same way (unlike Oclgrind's plugin-only split, AMD's `.cpp` files `#include <amd-dbgapi/amd-dbgapi.h>` directly and cannot compile at all without the SDK)
+- `ocldbg_core` (STATIC) — everything except `main.cpp` and the oclgrind plugin/runtime_inject; now includes `ocldbg/backends/cpu/CPUABI.cpp`, `ocldbg/backends/cpu/aarch64/AArch64CPUABI.cpp`, `ocldbg/ocl_debug_model/OCLAddressSpaces.cpp`. Links `Threads`, LLVM libs and `LLDB_LIB`. CMake footgun to remember: linking a `find_library()` result unconditionally breaks configure when the library is missing (it is literally the string `<VAR>-NOTFOUND`, which `target_link_libraries` rejects), so guard optional libraries.
 - `ocldbg` (EXECUTABLE) — `main.cpp` + `ocldbg_core`
 - `test_host_runner` (conditional on OpenCL found) — now `examples/host_runner.c` (was `tests/host_runner.c`)
 - `runtests` / `check-lit` — runs `lit -v tests/` (needs LLVM_LIT_BIN + FILECHECK_BIN + OpenCL)
@@ -436,7 +353,7 @@ Targets:
 
 `OCLDBG_HAVE_SB_ADDRESS_SPEC` (unmerged branch): result of a `check_cxx_source_compiles` for `SBProcess::ReadMemoryFromSpec`, which only the plugin-branch LLDB has; gates the address-space read in `LLDBAcceleratorBackend::read_global_memory` (plain `ReadMemory` otherwise, which cannot see device memory).
 
-Key CMake cache vars: `OCLGRIND_ROOT` (Oclgrind install; enables the plugin + backend). `AMD_DBGAPI_ROOT` (unmerged branch; defaults to `/opt/rocm`, auto-detects on ROCm machines; CMake package name is `amd-dbgapi` but the actual `.so` is `librocm-dbgapi.so` — `find_library(... NAMES rocm-dbgapi ...)`, easy to get backwards). Compile definitions: `OCLDBG_GIT_COMMIT`, `OCLDBG_VERSION`, `OCLDBG_OCLGRIND_PLUGIN_PATH`, `OCLDBG_OCLGRIND_LIB_DIR`, `OCLDBG_HAVE_AMD_DBGAPI` (unmerged; guards `#ifdef` call sites in `main.cpp`/`DebuggerContext.cpp`).
+Key CMake cache vars: `OCLGRIND_ROOT` (Oclgrind install; enables the plugin + backend). Compile definitions: `OCLDBG_GIT_COMMIT`, `OCLDBG_VERSION`, `OCLDBG_OCLGRIND_PLUGIN_PATH`, `OCLDBG_OCLGRIND_LIB_DIR`.
 
 CI (`.github/workflows/ci.yml`) is now a **2×2-ish matrix**: a lint job (format + tidy, single arch) and a `Build & Test` job that runs once for **x86_64** and once for **aarch64** (cross-compiled/emulated presumably — check the workflow if this matters) — this is new since the aarch64 backend landed; don't assume only one architecture is validated.
 
@@ -445,8 +362,8 @@ Build artifacts land in `build/`: `ocldbg`, `libocldbg_rt.so`, `libocldbg_oclgri
 ## 7. CLI surface (`ocldbg/args.h`, `main.cpp`)
 
 `ocldbg [options] [host_binary] [args...]`. Run modes chosen in `main.cpp:main()`:
-1. `--dry-run` → `run_dry_run()` — oclgrind backend uses `run_oclgrind_session()`; amd backend (unmerged) uses `run_amd_session()` (`#ifdef OCLDBG_HAVE_AMD_DBGAPI`, else prints "built without AMD GPU support"); accelerator backend (unmerged) uses `run_accelerator_session()` (`--dry-run` only); cpu backend uses `DebuggerContext` directly
-2. `--dap` or `--port <N>` → `DebuggerContext::run_dap()` — **now real** (was a stub throw before this cycle). Backend selection: `"oclgrind"` / `"amd"` (unmerged, guarded) / else cpu-default (`PoclCPUBackend`)
+1. `--dry-run` → `run_dry_run()` — oclgrind backend uses `run_oclgrind_session()`; accelerator backend (unmerged) uses `run_accelerator_session()` (`--dry-run` only); cpu backend uses `DebuggerContext` directly
+2. `--dap` or `--port <N>` → `DebuggerContext::run_dap()` — **now real** (was a stub throw before this cycle). Backend selection: `"oclgrind"` / else cpu-default (`PoclCPUBackend`)
 3. else → `DebuggerContext::run_cli()` — LLDB-passthrough REPL + `ocl` subcommands (CPU-only)
 
 `ocl` subcommands (`CustomCommands.cpp`): `ocl break [<file>:]<line> | list | delete <id>`, `ocl print|p <name>`, `ocl vars|v`, `ocl select|workitem|wi [<gx> [<gy> [<gz>]]] | list`.
@@ -472,9 +389,8 @@ Now a general-purpose host runner, not hardcoded to 3 kernel functions: `--globa
 | `tests/integration/test_breakpoint.py` | dead stub, all `skipTest` — ignore, see `tests/dap/` instead |
 | `tests/accelerator/mock_accelerator.cpp` (unmerged) | `REQUIRES: mock-accelerator`: the two-target flow against upstream LLDB 23's mock plugin (plugin stops, connect, thread + register read) |
 | `tests/accelerator/amd_gpu.cpp` (unmerged) | `REQUIRES: amd-accelerator`: HIP kernel on the real GPU, source breakpoint hit by all 64 lanes with `idx`, and a no-breakpoint run to completion |
-| `tests/amd_backend/oob_write_kernel.cpp` (unmerged) | manual (not lit-wired): `--backend amd --dry-run` halts the wave and reports stop reason `MEMORY_VIOLATION` for a real out-of-bounds GPU write; verified live against real hardware |
 
-Kernels (now in `examples/kernels/`, not `tests/kernels/`): `vector_add.cl`, `reduction_sum.cl` (**intentional off-by-one** `i<=n` should be `i<n` — the flagship CPU-backend debugging demo target), `matrix_multiply.cl`, plus `orbital_telemetry.cl`/`particle_physics.cl`/`satellite_telemetry.cl` (new, use `// FLAGS:` self-description). AMD-backend flagship bug (unmerged): `tests/amd_backend/oob_write_kernel.cpp`, same off-by-one-class bug, GPU analog.
+Kernels (now in `examples/kernels/`, not `tests/kernels/`): `vector_add.cl`, `reduction_sum.cl` (**intentional off-by-one** `i<=n` should be `i<n` — the flagship CPU-backend debugging demo target), `matrix_multiply.cl`, plus `orbital_telemetry.cl`/`particle_physics.cl`/`satellite_telemetry.cl` (new, use `// FLAGS:` self-description).
 
 ## 9. Where `docs/PLANNING.md` disagrees with actual code
 
@@ -482,7 +398,7 @@ PLANNING.md is the design doc (research framing, milestones, open questions) —
 - §3 "Component Map" lists files that don't exist: `OCLBreakpoint.h/cpp`, `OCLWorkItemSelector.h/cpp`, `plugin/OCLDebugPlugin.cpp`, `plugin/OCLBreakpointResolver.cpp`, `intel/`, `nvidia/` dirs. Treat §3 as aspirational only. (`amd/` now exists on the unmerged PR #25 branch, with different filenames than PLANNING guessed.)
 - Frames Oclgrind (Milestone 6) as a future/stretch item; in the actual repo it was the **first** fully-complete backend.
 - Frames DAP (Milestone 5) as a future milestone; **DAPServer is now real** (this cycle) — this is the single biggest way PLANNING.md is now out of date.
-- §5/§8e frame the AMD backend as hardware-gated/far-future. The `amd-gpu-backend` dev sandbox used to build PR #25 actually has both a real GPU and ROCm — not something to assume elsewhere, but worth checking. `amd_dbgapi_dwarf_register_to_register` (real vendor API) handles the DWARF register mapping PLANNING.md worried about.
+- §5/§8e frame the AMD backend as hardware-gated/far-future. The `amd-gpu-backend` dev sandbox actually has both a real GPU (RX 9060 XT, gfx1200) and ROCm 7.2 — not something to assume elsewhere, but worth checking. PLANNING.md's `ROCdbgapiBackend` plan was superseded by LLDB accelerator plugins (§5c).
 - §9 open-questions table already marks M1/M2's core risks "Resolved" — matches reality.
 - Nowhere does PLANNING.md mention the aarch64 CPU backend, the `!kernel_arg_addr_space` address-space recovery approach, or the VS Code extension — all added without a corresponding PLANNING.md update.
 
@@ -495,7 +411,5 @@ PLANNING.md is the design doc (research framing, milestones, open questions) —
 - Find the Oclgrind wire protocol constants: `ocldbg/backends/oclgrind/OclgrindProtocol.h`.
 - Find the real DAP message handlers: `ocldbg/dap/DAPServer.cpp` (ignore the stale TODO comment in `DAPServer.h`).
 - Find how kernel argument address spaces are recovered: `ocldbg/ocl_debug_model/OCLAddressSpaces.cpp` (parses pocl's cached bitcode's `!kernel_arg_addr_space` metadata).
-- To add a new execution backend: implement `Backend` (`include/ocldbg/Backend.h`) + a `LocationBackend`. `OclgrindBackend`, `PoclCPUBackend` (now), and `AMDBackend` (unmerged, partial) are all real templates now.
-- (Unmerged AMD branch) Find the ptrace/dbgapi callback plumbing: `ocldbg/backends/amd/AMDDbgApiSession.cpp` — see §5b, especially the delta/changed-tracking trap and the clang-tidy NOLINT placement gotchas.
-- (Unmerged AMD branch) To test without a full `ocldbg` build (e.g. LLDB not installed): `ocldbg/backends/amd/*.cpp` have no LLDB dependency; compile+link standalone against `-I include -I ocldbg -I <rocm>/include -L <rocm>/lib -lrocm-dbgapi`.
+- To add a new execution backend: implement `Backend` (`include/ocldbg/Backend.h`) + a `LocationBackend`. `OclgrindBackend`, `PoclCPUBackend` and `LLDBAcceleratorBackend` (unmerged) are all real templates now.
 - To verify clang-tidy locally before pushing: generate `compile_commands.json` via a plain `cmake -B <dir> -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` (configure-only is enough, doesn't need a working build), then `run-clang-tidy -p <dir> '<filename>\.cpp$'` — bare `clang-tidy file.cpp --` gives different (noisier, includes unrelated header issues) results than the real `run-clang-tidy` driver CI uses.
